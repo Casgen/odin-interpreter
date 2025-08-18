@@ -1,8 +1,8 @@
 # Notes
 
-Where we left off: p. 60
+Where we left off: p. 84
 
 ## Optimizations
 
-- [] for the parsing, use arenas to better optimize it.
-- [] for identifiers, probably use a map
+- [x] for the parsing, use arenas to better optimize it.
+- [x] for identifiers, probably use a map

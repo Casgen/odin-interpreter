@@ -30,13 +30,9 @@ write_expr_statement_string :: proc(statement: ^ExpressionStatement,
 
     assert(str_builder != nil)
 
-    strings.write_string(str_builder, statement.token.literal)
-
-    write_expression_string(statement.expr, str_builder)
-    strings.write_byte(str_builder, ';')
 }
 
-write_expression_string :: proc(expr: ^Expression,
+write_expression_string :: proc(expr: Expression,
     str_builder: ^strings.Builder) {
     
     switch variant in expr {
@@ -45,8 +41,20 @@ write_expression_string :: proc(expr: ^Expression,
     case ^IntegerLiteral:
         strings.write_string(str_builder, variant.token.literal)
     case ^PrefixExpression:
-        strings.write_string(str_builder, variant.token.literal)
+        strings.write_byte(str_builder, '(')
+        strings.write_string(str_builder, variant.operator)
         write_expression_string(variant.right, str_builder)
+        strings.write_byte(str_builder, ')')
+    case ^InfixExpression:
+        strings.write_byte(str_builder, '(')
+        write_expression_string(variant.left, str_builder)
+        strings.write_byte(str_builder, ' ')
+        strings.write_string(str_builder, variant.operator)
+        strings.write_byte(str_builder, ' ')
+        write_expression_string(variant.right, str_builder)
+        strings.write_byte(str_builder, ')')
+    case ^Boolean:
+        strings.write_string(str_builder, variant.value ? "true" : "false")
     }
 }
 
@@ -62,7 +70,7 @@ get_statement_string :: proc(statement: ^Statement) -> string {
 
     str_builder := strings.builder_make()
 
-    switch &obj in statement.stmt {
+    switch obj in statement {
     case ^ReturnStatement:
         strings.write_string(&str_builder, obj.token.literal)
         strings.write_byte(&str_builder, ' ')
@@ -73,16 +81,12 @@ get_statement_string :: proc(statement: ^Statement) -> string {
         strings.write_string(&str_builder, obj.ident.token.literal)
         strings.write_string(&str_builder, " = ")
         write_expression_string(obj.value, &str_builder)
+        strings.write_byte(&str_builder, ';')
     case ^ExpressionStatement:
-        write_expr_statement_string(obj, &str_builder)
-    case ^PrefixExpression:
-        strings.write_string(&str_builder, obj.operator^)
-        write_expression_string(obj.right, &str_builder)
+        write_expression_string(obj.expr, &str_builder)
     case:
         fmt.eprintln("Failed to get statement string. Unhandled Statement type!")
     }
-
-    strings.write_byte(&str_builder, ';')
 
     return strings.to_string(str_builder) // this only gives out the slice!
 }

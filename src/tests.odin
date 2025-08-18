@@ -4,11 +4,42 @@ package main
 import "core:testing"
 import "core:fmt"
 import "lexer"
-import "token"
+import tok "token"
 import "parser"
 import "core:log"
 import "core:strconv"
 import "core:mem/virtual"
+import "arena_utils"
+
+test_literal_expression :: proc{
+    test_literal_expression_i64,
+    test_literal_expression_i32,
+    test_literal_expression_identifier,
+}
+
+test_literal_expression_i64 :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    expected: i64
+) -> bool {
+    return test_integer_literal(t, expr, expected)
+}
+
+test_literal_expression_i32 :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    expected: i32
+) -> bool {
+    return test_integer_literal(t, expr, i64(expected))
+}
+
+test_literal_expression_identifier :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    expected: string
+) -> bool {
+    return test_identifier(t, expr, expected)
+}
 
 @(test)
 test_statements :: proc(t: ^testing.T) {
@@ -32,81 +63,81 @@ test_statements :: proc(t: ^testing.T) {
 
     10 == 10;
     10 != 9;`
-	tests := [?]token.Token {
-		{token.TokenType.Let, "let"},
-		{token.TokenType.Identifier, "five"},
-		{token.TokenType.Assign, "="},
-		{token.TokenType.Integer, "5"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Let, "let"},
-		{token.TokenType.Identifier, "ten"},
-		{token.TokenType.Assign, "="},
-		{token.TokenType.Integer, "10"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Let, "let"},
-		{token.TokenType.Identifier, "add"},
-		{token.TokenType.Assign, "="},
-		{token.TokenType.Function, "fn"},
-		{token.TokenType.Left_Paren, "("},
-		{token.TokenType.Identifier, "x"},
-		{token.TokenType.Comma, ","},
-		{token.TokenType.Identifier, "y"},
-		{token.TokenType.Right_Paren, ")"},
-		{token.TokenType.Left_Brace, "{"},
-		{token.TokenType.Identifier, "x"},
-		{token.TokenType.Plus, "+"},
-		{token.TokenType.Identifier, "y"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Right_Brace, "}"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Let, "let"},
-		{token.TokenType.Identifier, "result"},
-		{token.TokenType.Assign, "="},
-		{token.TokenType.Identifier, "add"},
-		{token.TokenType.Left_Paren, "("},
-		{token.TokenType.Identifier, "five"},
-		{token.TokenType.Comma, ","},
-		{token.TokenType.Identifier, "ten"},
-		{token.TokenType.Right_Paren, ")"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Bang, "!"},
-		{token.TokenType.Minus, "-"},
-		{token.TokenType.Slash, "/"},
-		{token.TokenType.Asterisk, "*"},
-		{token.TokenType.Integer, "5"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Integer, "5"},
-		{token.TokenType.Lt, "<"},
-		{token.TokenType.Integer, "10"},
-		{token.TokenType.Gt, ">"},
-		{token.TokenType.Integer, "5"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.If, "if"},
-		{token.TokenType.Left_Paren, "("},
-		{token.TokenType.Integer, "5"},
-		{token.TokenType.Lt, "<"},
-		{token.TokenType.Integer, "10"},
-		{token.TokenType.Right_Paren, ")"},
-		{token.TokenType.Left_Brace, "{"},
-		{token.TokenType.Return, "return"},
-		{token.TokenType.True, "true"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Right_Brace, "}"},
-		{token.TokenType.Else, "else"},
-		{token.TokenType.Left_Brace, "{"},
-		{token.TokenType.Return, "return"},
-		{token.TokenType.False, "false"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Right_Brace, "}"},
-		{token.TokenType.Integer, "10"},
-		{token.TokenType.Equal, "=="},
-		{token.TokenType.Integer, "10"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.Integer, "10"},
-		{token.TokenType.Not_Equal, "!="},
-		{token.TokenType.Integer, "9"},
-		{token.TokenType.Semicolon, ";"},
-		{token.TokenType.EOF, ""},
+	tests := [?]tok.Token {
+		{tok.TokenType.Let, "let"},
+		{tok.TokenType.Identifier, "five"},
+		{tok.TokenType.Assign, "="},
+		{tok.TokenType.Integer, "5"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Let, "let"},
+		{tok.TokenType.Identifier, "ten"},
+		{tok.TokenType.Assign, "="},
+		{tok.TokenType.Integer, "10"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Let, "let"},
+		{tok.TokenType.Identifier, "add"},
+		{tok.TokenType.Assign, "="},
+		{tok.TokenType.Function, "fn"},
+		{tok.TokenType.Left_Paren, "("},
+		{tok.TokenType.Identifier, "x"},
+		{tok.TokenType.Comma, ","},
+		{tok.TokenType.Identifier, "y"},
+		{tok.TokenType.Right_Paren, ")"},
+		{tok.TokenType.Left_Brace, "{"},
+		{tok.TokenType.Identifier, "x"},
+		{tok.TokenType.Plus, "+"},
+		{tok.TokenType.Identifier, "y"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Right_Brace, "}"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Let, "let"},
+		{tok.TokenType.Identifier, "result"},
+		{tok.TokenType.Assign, "="},
+		{tok.TokenType.Identifier, "add"},
+		{tok.TokenType.Left_Paren, "("},
+		{tok.TokenType.Identifier, "five"},
+		{tok.TokenType.Comma, ","},
+		{tok.TokenType.Identifier, "ten"},
+		{tok.TokenType.Right_Paren, ")"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Bang, "!"},
+		{tok.TokenType.Minus, "-"},
+		{tok.TokenType.Slash, "/"},
+		{tok.TokenType.Asterisk, "*"},
+		{tok.TokenType.Integer, "5"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Integer, "5"},
+		{tok.TokenType.Lt, "<"},
+		{tok.TokenType.Integer, "10"},
+		{tok.TokenType.Gt, ">"},
+		{tok.TokenType.Integer, "5"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.If, "if"},
+		{tok.TokenType.Left_Paren, "("},
+		{tok.TokenType.Integer, "5"},
+		{tok.TokenType.Lt, "<"},
+		{tok.TokenType.Integer, "10"},
+		{tok.TokenType.Right_Paren, ")"},
+		{tok.TokenType.Left_Brace, "{"},
+		{tok.TokenType.Return, "return"},
+		{tok.TokenType.True, "true"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Right_Brace, "}"},
+		{tok.TokenType.Else, "else"},
+		{tok.TokenType.Left_Brace, "{"},
+		{tok.TokenType.Return, "return"},
+		{tok.TokenType.False, "false"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Right_Brace, "}"},
+		{tok.TokenType.Integer, "10"},
+		{tok.TokenType.Equal, "=="},
+		{tok.TokenType.Integer, "10"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.Integer, "10"},
+		{tok.TokenType.Not_Equal, "!="},
+		{tok.TokenType.Integer, "9"},
+		{tok.TokenType.Semicolon, ";"},
+		{tok.TokenType.EOF, ""},
 	}
 
 	l := lexer.new_lexer(input)
@@ -135,10 +166,10 @@ test_let_statements :: proc(t: ^testing.T) {
 
     lex := lexer.new_lexer(input)
     par := parser.new_parser(lex)
-    defer { parser.destroy_parser(par); par = nil }
+    defer parser.destroy_parser(par)
 
     program := parser.parse_program(par)
-    defer { parser.free_program(program); program = nil }
+    defer parser.free_program(program)
     
     testing.expect(t, program != nil, "parse_program() returned nil!")
     testing.expectf(t, len(program.statements) == 3,
@@ -167,23 +198,41 @@ check_parser_errors :: proc(t: ^testing.T, parser: ^parser.Parser) {
 @(test)
 test_string :: proc(t: ^testing.T) {
     program := new(parser.Program)
-    
-    program.statements = {
-        parser.Statement{
-            stmt = parser.LetStatement{
-                token = {literal = "let", type = .Let},
-                ident = parser.create_identifier(token.Token{
-                    literal = "myVar",
-                    type = .Identifier
-                }),
-                value = parser.create_identifier(
-                        token.Token{
-                            literal = "anotherVar",
-                            type = .Identifier
-                })
-            }
+
+    arena := virtual.Arena{}
+    init_err := virtual.arena_init_static(&arena)
+
+    testing.expectf(t, init_err == .None, "Failed to allocate an arena! %v",
+        init_err)
+
+    program.identifiers = make([dynamic]parser.Identifier, 2)
+    program.identifiers[0] = parser.Identifier{
+        token = tok.Token{
+            literal = "myVar",
+            type = .Identifier
         }
     }
+
+    program.identifiers[1] = parser.Identifier{
+        token = tok.Token{
+            literal = "anotherVar",
+            type = .Identifier
+        },
+    }
+
+    let_stmt, err := arena_utils.push_struct(&arena, parser.LetStatement{
+        token = nil,
+        ident = &program.identifiers[0],
+        value = &program.identifiers[1], 
+    })
+
+    let_stmt.token = parser.alloc_token(
+        &arena,
+        tok.Token{literal = "let", type = .Let}
+    )
+    
+    program.arena = arena
+    program.statements = {let_stmt}
 
     defer parser.free_program(program)
 
@@ -201,8 +250,7 @@ test_identifier_expressions :: proc(t: ^testing.T) {
 
     input := "foobar;"
 
-    lex := lexer.new_lexer(input)
-    par := parser.new_parser(lex)
+    par := parser.new_parser(input)
     defer parser.destroy_parser(par)
 
     program := parser.parse_program(par)
@@ -213,28 +261,19 @@ test_identifier_expressions :: proc(t: ^testing.T) {
     testing.expectf(t, len(program.statements) == 1,
         "Program has not enough statements. got=%d", len(program.statements))
 
-    stmt: parser.ExpressionStatement
+    stmt, stmt_ok := program.statements[0].(^parser.ExpressionStatement)
 
-    #partial switch s in program.statements[0].stmt {
-    case parser.ExpressionStatement: stmt = s
-    case:
-        log.errorf("Statement is not of type 'ExpressionStatement'!, got %v",
-            typeid_of(type_of(s)))
-        testing.fail(t)
-    }
+    testing.expectf(t, stmt_ok,
+        "Statement is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(stmt)))
 
-    ident: ^parser.Identifier
+    ident, ident_ok := stmt.expr.(^parser.Identifier)
 
-    #partial switch expr in stmt.expr {
-    case ^parser.Identifier: ident = expr
-    case:
-        log.errorf("Expression is not of type '^parser.Identifier'!, got %v",
-            typeid_of(type_of(expr)))
-        testing.fail(t)
-    }
+    testing.expectf(t, ident_ok,
+        "Expression is not of type '^parser.Identifier'!, got %v",
+        typeid_of(type_of(ident)))
 
-    testing.expectf(t, ident.token.literal == "foobar",
-        `ident.token.literal not '%s', got '%s'`, "foobar", ident.token.literal)
+    test_identifier(t, ident, "foobar")
 }
 
 @(test)
@@ -254,37 +293,27 @@ test_integer_literal_expression :: proc(t: ^testing.T) {
     testing.expectf(t, len(program.statements) == 1,
         "Program has not enough statements. got=%d", len(program.statements))
 
-    stmt, ok := program.statements[0].stmt.(parser.ExpressionStatement)
+    stmt, ok := program.statements[0].(^parser.ExpressionStatement)
     
     testing.expectf(t, ok, "Statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(program.statements[0].stmt)))
+        typeid_of(type_of(program.statements[0])))
 
-    ident, ident_ok := stmt.expr.(parser.IntegerLiteral)
-
-    testing.expectf(t, ident_ok, "Expression is not of type 'IntegerLiteral'!, got %v",
-        typeid_of(type_of(stmt.expr)))
-
-    testing.expectf(t, ident.token.literal == "5",
-        `ident.token.literal not '5', got '%s'`, ident.token.literal)
-
-    testing.expectf(t, ident.token.type == .Integer,
-        "ident.token.type not .Integer, got %v", ident.token.literal)
-
-    testing.expectf(t, ident.value == 5,
-        `ident.value is not equal to 5, got=%d`, ident.value)
+    test_integer_literal(t, stmt.expr, 5)
 }
 
 @(test)
 test_parsing_prefix_expressions :: proc(t: ^testing.T) {
+    LiteralUnion :: union { i64, bool }
+
     PrefixTests :: struct {
         input:          string,
         operator:       string,
-        integer_value:  i64
+        value:  LiteralUnion
     }
 
     prefix_tests := []PrefixTests{
-        { input = "!5;", operator = "!", integer_value = 5},
-        { input = "-15;", operator = "-", integer_value = 15},
+        { input = "!5;", operator = "!", value = 5},
+        { input = "-15;", operator = "-", value = 15},
     }
 
     for &test in prefix_tests {
@@ -301,12 +330,12 @@ test_parsing_prefix_expressions :: proc(t: ^testing.T) {
             "program.statements does not contain 1 statement, got %d",
             len(program.statements))
 
-        stmt, ok := program.statements[0].stmt.(parser.ExpressionStatement)
+        stmt, ok := program.statements[0].(^parser.ExpressionStatement)
 
         testing.expectf(t, ok, "Statement is not an 'ExpressionStatement', got %v",
-            typeid_of(type_of(program.statements[0].stmt)))
+            typeid_of(type_of(program.statements[0])))
 
-        expr, prefix_ok := stmt.expr.(parser.PrefixExpression)
+        expr, prefix_ok := stmt.expr.(^parser.PrefixExpression)
 
         testing.expectf(t, prefix_ok, "variant is not 'PrefixExpression'!, got %v",
             typeid_of(type_of(stmt.expr)))
@@ -314,21 +343,297 @@ test_parsing_prefix_expressions :: proc(t: ^testing.T) {
         testing.expectf(t, expr.operator == test.operator,
             "expr.operator is not '%s', got '%s'", test.operator, expr.operator)
 
-        test_integer_literal(t, expr.right, test.integer_value)
+        switch val in test.value {
+            case i64: test_literal_expression_i64(t, expr.right, val)
+            case bool: test_boolean_expression(t, expr.right, val)
+        }
     }
 }
 
-test_integer_literal :: proc(t: ^testing.T, il: ^parser.Expression,
+test_integer_literal :: proc(t: ^testing.T, il: parser.Expression,
     value: i64) -> bool {
 
-    integer, ok := il.(parser.IntegerLiteral)
+    integer, ok := il.(^parser.IntegerLiteral)
 
-    testing.expectf(t, ok, "il not 'IntegerLiteral', got %v")
+    test_ok := testing.expectf(t, ok, "il not 'IntegerLiteral', got %v",
+        typeid_of(type_of(il)))
 
-    testing.expectf(t, integer.value == value, "integer.value not %d, got %d",
+    test_ok &= testing.expectf(t, integer.value == value, "integer.value not %d, got %d",
         value, integer.value)
 
-    testing.expectf(t, integer.token.literal == fmt.tprintf("%d", value),
+    test_ok &= testing.expectf(t, integer.token.literal == fmt.tprintf("%d", value),
         "integer.token.literal is not equal to '%s', got '%s'", value,
         integer.token.literal)
+
+    return true
+}
+
+@(test)
+test_parsing_infix_expressions :: proc(t: ^testing.T) {
+
+    LiteralUnion :: union { i64, bool }
+
+    InfixTests :: struct {
+        input:      string,
+        left_value: LiteralUnion,
+        operator:   string,
+        right_value: LiteralUnion,
+    }
+
+    infix_tests := [?]InfixTests{
+        {"5 + 5;", 5, "+", 5},
+        {"5 - 5;", 5, "-", 5},
+        {"5 * 5;", 5, "*", 5},
+        {"5 / 5;", 5, "/", 5},
+        {"5 > 5;", 5, ">", 5},
+        {"5 < 5;", 5, "<", 5},
+        {"5 == 5;", 5, "==", 5},
+        {"5 != 5;", 5, "!=", 5},
+        {"true == true", true, "==", true},
+        {"true != false", true, "!=", false},
+        {"false == false", false, "==", false},
+    }
+
+    for &test in infix_tests {
+
+        par := parser.new_parser(test.input)
+        defer parser.destroy_parser(par)
+
+        program := parser.parse_program(par)
+        defer parser.free_program(program)
+
+        check_parser_errors(t, par)
+
+        testing.expectf(t, len(program.statements) == 1,
+            "program.Statements does not contain 1 statements, got %d", 1,
+            len(program.statements))
+
+        stmt, ok := program.statements[0].(^parser.ExpressionStatement)
+
+        testing.expectf(t, ok,
+            "program.statements[0] is not an 'ExpressionStatement', got=%v",
+            typeid_of(type_of(program.statements[0])))
+
+        expr, infix_ok := stmt.expr.(^parser.InfixExpression)
+
+        testing.expectf(t, infix_ok,
+            "stmt.expr is not an 'InfixExpression', got=%v",
+            typeid_of(type_of(program.statements[0])))
+
+        switch val in test.left_value {
+        case i64:
+            if test_integer_literal(t, expr.left, val) do return
+        case bool:
+            if test_boolean_expression(t, expr.left, val) do return
+        }
+
+        testing.expectf(t, expr.operator == test.operator,
+            "expr.operator is not '%s', got='%s'", test.operator,
+            expr.operator)
+
+        switch val in test.right_value {
+        case i64:
+            if test_integer_literal(t, expr.left, val) do return
+        case bool:
+            if test_boolean_expression(t, expr.left, val) do return
+        }
+    }
+}
+
+@(test)
+test_operator_precedence_parsing :: proc(t: ^testing.T) {
+    PrecedenceTests :: struct {
+        input: string,
+        expected: string,
+    }
+
+    precedence_tests := [?]PrecedenceTests{
+        {
+            "-a * b",
+            "((-a) * b)",
+        },
+        {
+            "!-a",
+            "(!(-a))",
+        },
+        {
+            "a + b + c",
+            "((a + b) + c)",
+        },
+        {
+            "a + b - c",
+            "((a + b) - c)",
+        },
+        {
+            "a * b * c",
+            "((a * b) * c)",
+        },
+        {
+            "a * b / c",
+            "((a * b) / c)",
+        },
+        {
+            "a + b / c",
+            "(a + (b / c))",
+        },
+        {
+            "a + b * c + d / e - f",
+            "(((a + (b * c)) + (d / e)) - f)",
+        },
+        {
+            "3 + 4; -5 * 5",
+            "(3 + 4)((-5) * 5)",
+        },
+        {
+            "5 > 4 == 3 < 4",
+            "((5 > 4) == (3 < 4))",
+        },
+        {
+            "5 < 4 != 3 > 4",
+            "((5 < 4) != (3 > 4))",
+        },
+        {
+            "3 + 4 * 5 == 3 * 1 + 4 * 5",
+            "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+        },
+        {
+            "true",
+            "true"
+        },
+        {
+            "false",
+            "false"
+        },
+        {
+            "3 > 5 == false",
+            "((3 > 5) == false)"
+        },
+        {
+            "3 < 5 == true",
+            "((3 < 5) == true)"
+        },
+    }
+
+    for &test, i in precedence_tests {
+
+        par := parser.new_parser(test.input)
+        defer parser.destroy_parser(par)
+
+        program := parser.parse_program(par)
+        defer parser.free_program(program)
+
+        check_parser_errors(t, par)
+
+        actual_string := parser.get_program_string(program)
+        defer delete(actual_string)
+
+        testing.expectf(t, actual_string == test.expected,
+            "Got wrong output!\nExpected: '%s'\n, got: '%s'",
+            test.expected, actual_string)
+
+    }
+
+}
+
+test_identifier :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    value: string
+) -> bool {
+
+    ident, ok := expr.(^parser.Identifier)
+
+    testing.expectf(t, ok,
+        "Unexpected expression type! Expected parse.Identifier, got %v",
+        typeid_of(type_of(expr))) or_return
+
+    testing.expectf(t, ident.token.literal == value,
+        "Unexpected identifier name! Expected %s, got %s", value,
+        ident.token.literal) or_return
+
+    return true
+}
+
+
+
+test_infix_expression :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    left: $T,
+    operator: string,
+    right: $E,
+) -> bool {
+
+    infix_expr, ok := expr.(^parser.InfixExpression)
+
+    testing.expectf(t, ok,
+        "Unexpected Expression. Expected InfixExpression, got %v",
+        typeid_of(type_of(infix_expr))) or_return
+
+    test_literal_expression(t, infix_expr.left, left) or_return
+
+    testing.expectf(t, infix_expr.operator == operator,
+        "Unexpected Infix operator. Expected %s, got %s", operator,
+        infix_expr.operator) or_return
+
+    test_literal_expression(t, infix_expr.right, right) or_return
+
+    return true
+}
+
+test_booleans :: proc(t: ^testing.T) {
+    BooleanTests :: struct {
+        input: string,
+        expected: string,
+    }
+
+    bool_tests := [?]BooleanTests{
+        { input = "true", expected = "true" },
+        { input = "false", expected = "false" },
+        { input = "3 > 5 == false", expected = "((3 > 5) == false)" },
+        { input = "3 < 5 == true", expected = "((3 < 5) == true)" },
+    }
+
+    for &test in bool_tests {
+
+        par := parser.new_parser(test.input)
+        defer parser.destroy_parser(par)
+
+        program := parser.parse_program(par)
+        defer parser.free_program(program)
+
+
+
+    }
+}
+
+test_boolean_expression :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    expected: bool,
+) -> bool {
+
+    bool_expr, ok := expr.(^parser.Boolean)
+
+    testing.expectf(t, ok,
+        "Expression is not of type 'Boolean'! got %v",
+        typeid_of(type_of(expr))) or_return
+
+    testing.expectf(t, bool_expr.value == expected,
+        "Unexpected boolean value: Expected %v, got %v",
+        expected, bool_expr.value) or_return
+
+    bool_str := expected ? "true" : "false"
+
+    testing.expectf(t, bool_expr.token.literal == bool_str,
+        "Unexpected boolean token literal: Expected %v, got %v",
+        expected, bool_str) or_return
+
+    bool_enum := expected ? tok.TokenType.True : tok.TokenType.False
+
+    testing.expectf(t, bool_expr.token.type == bool_enum,
+        "Unexpected boolean token type: Expected %v, got %v",
+        expected, bool_enum) or_return
+
+    return true
 }

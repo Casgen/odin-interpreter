@@ -11,6 +11,11 @@ IntegerLiteral :: struct {
     value: i64
 }
 
+Boolean :: struct {
+    token: ^tok.Token,
+    value: bool
+}
+
 /*
 object for holding expressions.
 
@@ -19,41 +24,49 @@ Expression can hold the following:
 - Equation (for ex. "5 + 5")
 - Function call (for ex. add(5, 5))
 */
+
 Expression :: union {
     ^Identifier,
     ^IntegerLiteral,
-    ^PrefixExpression
+    ^PrefixExpression,
+    ^InfixExpression,
+    ^Boolean,
 }
 
 ExpressionStatement :: struct {
-    token: ^tok.Token,
-    expr: Expression,
+    token:  ^tok.Token,
+    expr:   Expression,
 }
 
+// object for holding unary expressions, for ex. (-5)
 PrefixExpression :: struct {
-    token: ^tok.Token,
-    operator: ^string,
-    right: ^Expression
+    token:      ^tok.Token,
+    operator:   string,
+    right:      Expression
 }
 
-Statement :: struct {
-    stmt: union {
-        ^ReturnStatement,        // example: return 5;
-        ^LetStatement,           // example: let x = 6;
-        ^ExpressionStatement,    // example: x + 10;
-        ^PrefixExpression,       // example -5;
-    }
+// object for holding binary expressions, for ex. (5 * 2)
+InfixExpression :: struct {
+    token:          ^tok.Token,
+    operator:       string,
+    left, right:    Expression,
+}
+
+Statement :: union {
+    ^ReturnStatement,        // example: return 5;
+    ^LetStatement,           // example: let x = 6;
+    ^ExpressionStatement,    // example: x + 10;
 }
 
 ReturnStatement :: struct {
     token: ^tok.Token,
-    value: ^Expression,
+    value: Expression,
 }
 
 LetStatement :: struct {
-    token: ^tok.Token,
+    token:  ^tok.Token,
     // use it as a pointer to have only one existing identifier!
 	ident:  ^Identifier,
-	value:  ^Expression,
+	value:  Expression,
 }
 

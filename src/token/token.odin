@@ -42,6 +42,11 @@ TokenType :: enum {
 	Lt,
 }
 
+is_boolean_type :: proc(token_type: TokenType) -> bool {
+    return token_type == .True || token_type == .False
+}
+
+
 keywords := map[string]TokenType {
     "fn" = .Function,
     "let" = .Let,

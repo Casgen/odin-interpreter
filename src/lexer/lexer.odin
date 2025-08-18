@@ -175,8 +175,7 @@ read_identifier :: proc(using lex: ^Lexer) -> string {
 	}
 
     // Cloning the literal to make it independent from the input
-    ident := strings.clone(input[first_position:position])
-	return ident
+	return input[first_position:position] 
 }
 
 skip_whitespace :: proc(using lex: ^Lexer) {
