@@ -4,6 +4,7 @@ import "core:mem/virtual"
 import "core:mem"
 import "core:strings"
 import "core:fmt"
+import "core:slice"
 
 push_struct :: proc {
     push_struct_type,
@@ -63,9 +64,18 @@ push_struct_literal :: proc(
     return nil, err
 }
 
-// Allocates a static array on the Arena. The array is not resizable!
+/*
+Allocates a static array on the Arena. The array is not resizable!
+
+NOTE: Should nil be returned or not? In C it is implementation defined.
+Either it will return nullptr or not, but it shouldn't be dereferenced.
+If it can't be dereferenced, than nullptr would be more predictable,
+because that can't be dereferenced too.
+
+en.cppreference.com/w/c/memory/malloc
+*/
 push_array :: proc(arena: ^virtual.Arena, obj: $T,
-    length: u32) -> []T {
+    length: u32) -> ([]T, mem.Allocator_Error) {
 
     if length == 0 do return nil
 
@@ -74,7 +84,7 @@ push_array :: proc(arena: ^virtual.Arena, obj: $T,
 
     switch err {
     case .None:
-        return transmute(T)data, err
+        return slice.reinterpret([]T, data), err
     case .Invalid_Pointer:
         fmt.eprintfln("Failed to push array! Invalid_Pointer!")
     case .Out_Of_Memory:
@@ -86,7 +96,54 @@ push_array :: proc(arena: ^virtual.Arena, obj: $T,
     }
 
     return nil, err
+}
 
+/*
+Accepts a dynamic array, allocates it in the arena, copies the data
+and returns an array.
+
+WARN: The result makes a shallow copy and the array is no longer resizable!
+
+NOTE: Should nil be returned or not? In C it is implementation defined.
+Either it will return nullptr or not, but it shouldn't be dereferenced.
+If it can't be dereferenced, than nullptr would be more predictable,
+because that can't be dereferenced too.
+
+en.cppreference.com/w/c/memory/malloc
+*/
+push_dynamic_array :: proc(
+    arena: ^virtual.Arena,
+    dynamic_arr: [dynamic]$E
+) -> ([]E, mem.Allocator_Error) {
+
+    if len(dynamic_arr) == 0 {
+        fmt.eprintfln("Warning! Pushed an array with 0 length!")
+        return nil, .Invalid_Pointer
+    }
+
+    num_bytes: uint = size_of(E) * len(dynamic_arr)
+    data, err := virtual.arena_alloc(arena, num_bytes, mem.DEFAULT_ALIGNMENT)
+
+    switch err {
+    case .Invalid_Pointer:
+        fmt.eprintfln("Failed to push array! Invalid_Pointer!")
+    case .Out_Of_Memory:
+        fmt.eprintfln("Failed to push array! Out Of Memory!")
+    case .Mode_Not_Implemented:
+        fmt.eprintfln("Failed to push array! Mode not implemented!")
+    case .Invalid_Argument:
+        fmt.eprintfln("Failed to push array! Invalid Argument!")
+    case .None:
+        // Make a copy
+        mem.copy(mem.raw_data(data), mem.raw_data(dynamic_arr),
+            size_of(E) * len(dynamic_arr))
+
+        // Cast to the slice with appropriate type
+        return slice.reinterpret([]E, data), err
+    }
+
+
+    return nil, err
 }
 
 // Allocates a constant string on the arena.

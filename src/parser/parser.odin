@@ -9,6 +9,7 @@ import "core:strconv"
 import "../utils"
 import "../arena_utils"
 import "core:strings"
+import "core:slice"
 
 PrefixParseProc :: proc(parser: ^Parser) -> (Expression, bool)
 InfixParseProc :: proc(parser: ^Parser, expr: Expression) -> (Expression, bool)
@@ -83,26 +84,6 @@ new_parser_lexer :: proc(lex: ^lexer.Lexer) -> ^Parser {
 	p.curr_token = lexer.next_token(lex)
 	p.peek_token = lexer.next_token(lex)
 	p.errors = make([dynamic]string, 0, 1)
-
-    p.prefix_parser_procs = make(map[token.TokenType]PrefixParseProc)
-
-    p.prefix_parser_procs[token.TokenType.Identifier] = parse_identifier
-    p.prefix_parser_procs[token.TokenType.Integer] = parse_integer_literal
-    p.prefix_parser_procs[token.TokenType.Bang] = parse_prefix_expression
-    p.prefix_parser_procs[token.TokenType.Minus] = parse_prefix_expression
-    p.prefix_parser_procs[token.TokenType.True] = parse_boolean
-    p.prefix_parser_procs[token.TokenType.False] = parse_boolean
-
-    p.infix_parser_procs = make(map[token.TokenType]InfixParseProc) 
-
-    p.infix_parser_procs[token.TokenType.Plus] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Minus] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Slash] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Asterisk] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Equal] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Not_Equal] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Lt] = parse_infix_expression
-    p.infix_parser_procs[token.TokenType.Gt] = parse_infix_expression
 
     err := virtual.arena_init_growing(&p.arena)
     assert(err == virtual.Allocator_Error.None, "Failed to allocate an arena!")
@@ -238,7 +219,7 @@ parse_expression_statement :: proc(parser: ^Parser) ->
     return expr_stmt, true
 }
 
-get_prefix_proc_by_token_type :: proc( tok_type: token.TokenType) ->
+get_prefix_proc_by_token_type :: proc(tok_type: token.TokenType) ->
     PrefixParseProc {
     
     #partial switch tok_type {
@@ -247,8 +228,9 @@ get_prefix_proc_by_token_type :: proc( tok_type: token.TokenType) ->
     case .Bang: fallthrough
     case .Minus: return parse_prefix_expression
     case .True: fallthrough
-    case .False:
-        return parse_boolean
+    case .False: return parse_boolean
+    case .Left_Paren: return parse_grouped_expression
+    case .If: return parse_if_expression
     }
 
     return nil
@@ -272,7 +254,6 @@ get_infix_proc_by_token_type :: proc(tok_type: token.TokenType) ->
 }
 
 parse_expression :: proc(parser: ^Parser, precedence: Precedence) -> (Expression, bool) {
-    // TODO: Could it be converted to just a switch statement?
     prefix_fn := get_prefix_proc_by_token_type(parser.curr_token.type)
 
     if prefix_fn == nil {
@@ -348,6 +329,99 @@ parse_infix_expression :: proc(parser: ^Parser, left_expr: Expression) ->
     expr.right, ok = parse_expression(parser, precedence)
 
     return expr, ok
+}
+
+parse_if_expression :: proc(parser: ^Parser) -> (Expression, bool) {
+
+    if_expr, err := arena_utils.push_struct_type(&parser.arena, IfExpression)
+
+    if err != .None {
+        return nil, false
+    }
+
+    if_expr.token = alloc_token(&parser.arena, parser.curr_token)
+
+    // Parse if
+    if !expect_peek_token(parser, .Left_Paren) {
+        return nil, false
+    }
+
+    next_token(parser)
+
+    expr_ok: bool
+    if_expr.condition, expr_ok = parse_expression(parser, .Lowest)
+
+    if !expr_ok || !expect_peek_token(parser, .Right_Paren) {
+        return nil, false
+    }
+
+    if !expect_peek_token(parser, .Left_Brace) {
+        return nil, false
+    }
+    
+    cons_ok: bool
+    if_expr.consequence, cons_ok = parse_block_statement(parser)
+
+    if !cons_ok {
+        return nil, false
+    }
+
+    // if 'else' block is present, parse it.
+    if parser.peek_token.type != .Else {
+        return if_expr, true
+    }
+
+    next_token(parser)
+
+    if !expect_peek_token(parser, .Left_Brace) {
+        return if_expr, false
+    }
+
+    alt_ok: bool
+    if_expr.alternative, alt_ok = parse_block_statement(parser)
+
+    return if_expr, alt_ok
+}
+
+parse_block_statement :: proc(parser: ^Parser) -> (^BlockStatement, bool) {
+
+    block_stmt, err := arena_utils.push_struct(&parser.arena, BlockStatement)
+
+    if err != .None {
+        return nil, false
+    }
+
+    block_stmt.token = alloc_token(&parser.arena, parser.curr_token)
+
+    next_token(parser)
+
+    // I don't know how many statements are going to be there to allocate
+    // it in the arena. Have to parse them first and then allocate them
+    // in the arena.
+    statements: [dynamic]Statement = {}
+    defer delete(statements)
+
+    for parser.curr_token.type != .Right_Brace && parser.curr_token.type != .EOF {
+        stmt, ok := parse_statement(parser)
+
+        if ok {
+            append(&statements, stmt)
+        }
+
+        next_token(parser)
+    }
+
+    slice_stmts, stmts_err := arena_utils.push_dynamic_array(
+        &parser.arena,
+        statements
+    )
+
+    if stmts_err != .None {
+        return block_stmt, false
+    }
+
+    block_stmt.statements = slice_stmts
+    return block_stmt, true
 }
 
 peek_precedence :: proc(parser: ^Parser) -> Precedence {
@@ -447,13 +521,13 @@ parse_integer_literal :: proc(parser: ^Parser) -> (Expression, bool) {
     return int_literal, true
 }
 
-is_boolean_type :: proc(token_type: token.TokenType) -> bool {
+is_boolean_literal :: proc(token_type: token.TokenType) -> bool {
     return token_type == .True || token_type == .False
 }
 
 parse_boolean :: proc(parser: ^Parser) -> (Expression, bool) {
     
-    if !is_boolean_type(parser.curr_token.type) {
+    if !is_boolean_literal(parser.curr_token.type) {
         err_msg := fmt.tprintf(
             "Expected token 'True' or 'False', got '%s' instead",
             parser.curr_token.type
@@ -473,6 +547,19 @@ parse_boolean :: proc(parser: ^Parser) -> (Expression, bool) {
     bool_expr.value = parser.curr_token.type == .True ? true : false
 
     return bool_expr, true
+}
+
+parse_grouped_expression :: proc(parser: ^Parser) -> (Expression, bool) {
+
+    next_token(parser)
+
+    expr, ok := parse_expression(parser, .Lowest)
+
+    if ok && expect_peek_token(parser, .Right_Paren) {
+        return expr, true
+    }
+
+    return nil, false
 }
 
 parse_identifier :: proc(parser: ^Parser) -> (Expression, bool) {

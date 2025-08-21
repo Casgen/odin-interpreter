@@ -7,7 +7,7 @@ import "token"
 import "parser"
 
 main :: proc() {
-    input := "false"
+    input := "if (x < y) { x } else { y }"
 
     par := parser.new_parser(input)
     defer parser.destroy_parser(par)

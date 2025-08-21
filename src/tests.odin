@@ -11,6 +11,9 @@ import "core:strconv"
 import "core:mem/virtual"
 import "arena_utils"
 
+// TODO: use reflect to write out the variant name of a union.
+import "core:reflect"
+
 test_literal_expression :: proc{
     test_literal_expression_i64,
     test_literal_expression_i32,
@@ -39,6 +42,109 @@ test_literal_expression_identifier :: proc(
     expected: string
 ) -> bool {
     return test_identifier(t, expr, expected)
+}
+
+test_identifier :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    value: string
+) -> bool {
+
+    ident, ok := expr.(^parser.Identifier)
+
+    testing.expectf(t, ok,
+        "Unexpected expression type! Expected parse.Identifier, got %v",
+        typeid_of(type_of(expr))) or_return
+
+    testing.expectf(t, ident.token.literal == value,
+        "Unexpected identifier name! Expected %s, got %s", value,
+        ident.token.literal) or_return
+
+    return true
+}
+
+
+
+test_infix_expression :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    left: $T,
+    operator: string,
+    right: $E,
+) -> bool {
+
+    infix_expr, ok := expr.(^parser.InfixExpression)
+
+    testing.expectf(t, ok,
+        "Unexpected Expression. Expected InfixExpression, got %v",
+        typeid_of(type_of(infix_expr))) or_return
+
+    test_literal_expression(t, infix_expr.left, left) or_return
+
+    testing.expectf(t, infix_expr.operator == operator,
+        "Unexpected Infix operator. Expected %s, got %s", operator,
+        infix_expr.operator) or_return
+
+    test_literal_expression(t, infix_expr.right, right) or_return
+
+    return true
+}
+
+test_booleans :: proc(t: ^testing.T) {
+    BooleanTests :: struct {
+        input: string,
+        expected: string,
+    }
+
+    bool_tests := [?]BooleanTests{
+        { input = "true", expected = "true" },
+        { input = "false", expected = "false" },
+        { input = "3 > 5 == false", expected = "((3 > 5) == false)" },
+        { input = "3 < 5 == true", expected = "((3 < 5) == true)" },
+    }
+
+    for &test in bool_tests {
+
+        par := parser.new_parser(test.input)
+        defer parser.destroy_parser(par)
+
+        program := parser.parse_program(par)
+        defer parser.free_program(program)
+
+
+
+    }
+}
+
+test_boolean_expression :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    expected: bool,
+) -> bool {
+
+    bool_expr, ok := expr.(^parser.Boolean)
+
+    testing.expectf(t, ok,
+        "Expression is not of type 'Boolean'! got %v",
+        typeid_of(type_of(expr))) or_return
+
+    testing.expectf(t, bool_expr.value == expected,
+        "Unexpected boolean value: Expected %v, got %v",
+        expected, bool_expr.value) or_return
+
+    bool_str := expected ? "true" : "false"
+
+    testing.expectf(t, bool_expr.token.literal == bool_str,
+        "Unexpected boolean token literal: Expected %v, got %v",
+        expected, bool_str) or_return
+
+    bool_enum := expected ? tok.TokenType.True : tok.TokenType.False
+
+    testing.expectf(t, bool_expr.token.type == bool_enum,
+        "Unexpected boolean token type: Expected %v, got %v",
+        expected, bool_enum) or_return
+
+    return true
 }
 
 @(test)
@@ -512,6 +618,26 @@ test_operator_precedence_parsing :: proc(t: ^testing.T) {
             "3 < 5 == true",
             "((3 < 5) == true)"
         },
+        {
+            "1 + (2 + 3) + 4",
+            "((1 + (2 + 3)) + 4)",
+        },
+        {
+            "(5 + 5) * 2",
+            "((5 + 5) * 2)",
+        },
+        {
+            "2 / (5 + 5)",
+            "(2 / (5 + 5))",
+        },
+        {
+            "-(5 + 5)",
+            "(-(5 + 5))",
+        },
+        {
+            "!(true == true)",
+            "(!(true == true))",
+        },
     }
 
     for &test, i in precedence_tests {
@@ -535,105 +661,102 @@ test_operator_precedence_parsing :: proc(t: ^testing.T) {
 
 }
 
-test_identifier :: proc(
-    t: ^testing.T,
-    expr: parser.Expression,
-    value: string
-) -> bool {
+@(test)
+test_if_expressions :: proc(t: ^testing.T) {
+    input := "if (x < y) { x }"
 
-    ident, ok := expr.(^parser.Identifier)
+    par := parser.new_parser(input)
+    defer parser.destroy_parser(par)
 
-    testing.expectf(t, ok,
-        "Unexpected expression type! Expected parse.Identifier, got %v",
-        typeid_of(type_of(expr))) or_return
+    program := parser.parse_program(par)
+    defer parser.free_program(program)
 
-    testing.expectf(t, ident.token.literal == value,
-        "Unexpected identifier name! Expected %s, got %s", value,
-        ident.token.literal) or_return
+    testing.expectf(t, len(program.statements) == 1,
+        "program.statements does not contain 1 statement, got %d",
+        len(program.statements))
 
-    return true
+    stmt, stmt_ok := program.statements[0].(^parser.ExpressionStatement)
+
+    testing.expectf(t, stmt_ok,
+        "Statement is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(program.statements[0])))
+
+    if_expr, if_ok := stmt.expr.(^parser.IfExpression)
+
+    testing.expectf(t, if_ok,
+        "Statement is not of type 'IfExpression'!, got %v",
+        typeid_of(type_of(stmt.expr)))
+
+    test_infix_expression(t, if_expr.condition, "x", "<", "y")
+
+    testing.expectf(t, len(if_expr.consequence.statements) == 1,
+        "Consequence is not 1 statement, got %d",
+        len(if_expr.consequence.statements))
+
+    consequence, cons_ok := if_expr.consequence.statements[0].(^parser.ExpressionStatement)
+
+    testing.expectf(t, if_ok,
+        "Consequence statement is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(if_expr.consequence.statements[0])))
+
+    testing.expect(t, test_identifier(t, consequence.expr, "x"))
+
+    testing.expectf(t, if_expr.alternative == nil,
+        "Alternative was not nil!, got '%v'", if_expr.alternative)
 }
 
+@(test)
+test_if_else_expressions :: proc(t: ^testing.T) {
+    input := "if (x < y) { x } else { y }"
 
+    par := parser.new_parser(input)
+    defer parser.destroy_parser(par)
 
-test_infix_expression :: proc(
-    t: ^testing.T,
-    expr: parser.Expression,
-    left: $T,
-    operator: string,
-    right: $E,
-) -> bool {
+    program := parser.parse_program(par)
+    defer parser.free_program(program)
 
-    infix_expr, ok := expr.(^parser.InfixExpression)
+    testing.expectf(t, len(program.statements) == 1,
+        "program.statements does not contain 1 statement, got %d",
+        len(program.statements))
 
-    testing.expectf(t, ok,
-        "Unexpected Expression. Expected InfixExpression, got %v",
-        typeid_of(type_of(infix_expr))) or_return
+    stmt, stmt_ok := program.statements[0].(^parser.ExpressionStatement)
 
-    test_literal_expression(t, infix_expr.left, left) or_return
+    testing.expectf(t, stmt_ok,
+        "Statement is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(program.statements[0])))
 
-    testing.expectf(t, infix_expr.operator == operator,
-        "Unexpected Infix operator. Expected %s, got %s", operator,
-        infix_expr.operator) or_return
+    if_expr, if_ok := stmt.expr.(^parser.IfExpression)
 
-    test_literal_expression(t, infix_expr.right, right) or_return
+    testing.expectf(t, if_ok,
+        "Statement is not of type 'IfExpression'!, got %v",
+        typeid_of(type_of(stmt.expr)))
 
-    return true
-}
+    test_infix_expression(t, if_expr.condition, "x", "<", "y")
 
-test_booleans :: proc(t: ^testing.T) {
-    BooleanTests :: struct {
-        input: string,
-        expected: string,
-    }
+    // Testing 'if'
+    testing.expectf(t, len(if_expr.consequence.statements) == 1,
+        "Consequence is not 1 statement, got %d",
+        len(if_expr.consequence.statements))
 
-    bool_tests := [?]BooleanTests{
-        { input = "true", expected = "true" },
-        { input = "false", expected = "false" },
-        { input = "3 > 5 == false", expected = "((3 > 5) == false)" },
-        { input = "3 < 5 == true", expected = "((3 < 5) == true)" },
-    }
+    consequence, cons_ok := if_expr.consequence.statements[0].(^parser.ExpressionStatement)
 
-    for &test in bool_tests {
+    testing.expectf(t, if_ok,
+        "Consequence statement is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(if_expr.consequence.statements[0])))
 
-        par := parser.new_parser(test.input)
-        defer parser.destroy_parser(par)
+    testing.expect(t, test_identifier(t, consequence.expr, "x"))
+    testing.expect(t, if_expr.alternative != nil, "Alternative was nil!")
 
-        program := parser.parse_program(par)
-        defer parser.free_program(program)
+    // Testing 'else'
+    testing.expectf(t, len(if_expr.alternative.statements) == 1,
+        "Alternative is not 1 statement, got %d",
+        len(if_expr.alternative.statements))
 
+    alt, alt_ok := if_expr.alternative.statements[0].(^parser.ExpressionStatement)
 
+    testing.expectf(t, if_ok,
+        "Alternative statement is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(if_expr.alternative.statements[0])))
 
-    }
-}
-
-test_boolean_expression :: proc(
-    t: ^testing.T,
-    expr: parser.Expression,
-    expected: bool,
-) -> bool {
-
-    bool_expr, ok := expr.(^parser.Boolean)
-
-    testing.expectf(t, ok,
-        "Expression is not of type 'Boolean'! got %v",
-        typeid_of(type_of(expr))) or_return
-
-    testing.expectf(t, bool_expr.value == expected,
-        "Unexpected boolean value: Expected %v, got %v",
-        expected, bool_expr.value) or_return
-
-    bool_str := expected ? "true" : "false"
-
-    testing.expectf(t, bool_expr.token.literal == bool_str,
-        "Unexpected boolean token literal: Expected %v, got %v",
-        expected, bool_str) or_return
-
-    bool_enum := expected ? tok.TokenType.True : tok.TokenType.False
-
-    testing.expectf(t, bool_expr.token.type == bool_enum,
-        "Unexpected boolean token type: Expected %v, got %v",
-        expected, bool_enum) or_return
-
-    return true
+    testing.expect(t, test_identifier(t, alt.expr, "y"))
 }

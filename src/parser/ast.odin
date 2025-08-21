@@ -17,6 +17,25 @@ Boolean :: struct {
 }
 
 /*
+Struct for holding a series of statements which are enclosed in a scope
+(meaning by braces) for ex.:
+
+```
+//...
+{
+    let x = 6;
+    let y = 4;
+
+    result = x + y;
+}
+//...
+*/
+BlockStatement :: struct {
+    token: ^tok.Token,
+    statements: []Statement
+}
+
+/*
 object for holding expressions.
 
 Expression can hold the following:
@@ -31,6 +50,7 @@ Expression :: union {
     ^PrefixExpression,
     ^InfixExpression,
     ^Boolean,
+    ^IfExpression,
 }
 
 ExpressionStatement :: struct {
@@ -50,6 +70,13 @@ InfixExpression :: struct {
     token:          ^tok.Token,
     operator:       string,
     left, right:    Expression,
+}
+
+IfExpression :: struct {
+    token: ^tok.Token,
+    condition: Expression,
+    consequence: ^BlockStatement,
+    alternative: ^BlockStatement,
 }
 
 Statement :: union {
