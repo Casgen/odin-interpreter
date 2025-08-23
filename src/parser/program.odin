@@ -7,7 +7,6 @@ import "core:fmt"
 
 Program :: struct {
     arena: virtual.Arena,
-    identifiers: [dynamic]Identifier,
 	statements: [dynamic]Statement,
 }
 
@@ -27,9 +26,13 @@ write_block_statement :: proc(
     block_stmt: ^BlockStatement,
     str_builder: ^strings.Builder,
 ) {
+    strings.write_string(str_builder, "{ ")
+
     for &stmt in block_stmt.statements {
         write_statement_string(stmt, str_builder)
     }
+
+    strings.write_string(str_builder, "}")
 }
 
 write_expression_string :: proc(expr: Expression,
@@ -65,6 +68,28 @@ write_expression_string :: proc(expr: Expression,
             strings.write_string(str_builder, "else ")
             write_block_statement(variant.consequence, str_builder)
         }
+    case ^FunctionLiteral:
+        strings.write_string(str_builder, "fn(")
+    
+        param_count := len(variant.params)
+
+        if param_count > 0 {
+            for i in 0..<(len(variant.params)-1) {
+                strings.write_string(
+                    str_builder, 
+                    variant.params[i].token.literal
+                )
+                strings.write_string(str_builder, ", ")
+            }
+
+            strings.write_string(
+                str_builder,
+                variant.params[param_count - 1].token.literal,
+            )
+        }
+
+        strings.write_string(str_builder,") ")
+        write_block_statement(variant.body, str_builder)
     }
 }
 

@@ -2,15 +2,20 @@ package parser
 
 import tok "../token"
 
+// Holds a name for an identifier (for ex. 'x' or 'value')
+// TODO: Eventually we have to somehow deal with one source of truth of 
+// these identifiers. Probably with a map.
 Identifier :: struct {
-	token: tok.Token,
+	token: ^tok.Token,
 }
 
+// Struct for holding an integer value (for ex. 12)
 IntegerLiteral :: struct {
     token: ^tok.Token,
     value: i64
 }
 
+// Struct for holding a bool value.
 Boolean :: struct {
     token: ^tok.Token,
     value: bool
@@ -35,6 +40,12 @@ BlockStatement :: struct {
     statements: []Statement
 }
 
+FunctionLiteral :: struct {
+    token: ^tok.Token,
+    params: []Identifier,
+    body: ^BlockStatement,
+}
+
 /*
 object for holding expressions.
 
@@ -51,6 +62,7 @@ Expression :: union {
     ^InfixExpression,
     ^Boolean,
     ^IfExpression,
+    ^FunctionLiteral,
 }
 
 ExpressionStatement :: struct {

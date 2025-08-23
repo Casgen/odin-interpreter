@@ -41,24 +41,25 @@ test_literal_expression_identifier :: proc(
     expr: parser.Expression,
     expected: string
 ) -> bool {
-    return test_identifier(t, expr, expected)
+    ident, ok := expr.(^parser.Identifier)
+
+    testing.expectf(t, ok,
+        "Unexpected expression type! Expected parser.Identifier, got %v",
+        typeid_of(type_of(expr))) or_return
+
+    return test_identifier(t, ident, expected)
 }
 
 test_identifier :: proc(
     t: ^testing.T,
-    expr: parser.Expression,
+    identifier: ^parser.Identifier,
     value: string
 ) -> bool {
 
-    ident, ok := expr.(^parser.Identifier)
 
-    testing.expectf(t, ok,
-        "Unexpected expression type! Expected parse.Identifier, got %v",
-        typeid_of(type_of(expr))) or_return
-
-    testing.expectf(t, ident.token.literal == value,
+    testing.expectf(t, identifier.token.literal == value,
         "Unexpected identifier name! Expected %s, got %s", value,
-        ident.token.literal) or_return
+        identifier.token.literal) or_return
 
     return true
 }
@@ -311,25 +312,30 @@ test_string :: proc(t: ^testing.T) {
     testing.expectf(t, init_err == .None, "Failed to allocate an arena! %v",
         init_err)
 
-    program.identifiers = make([dynamic]parser.Identifier, 2)
-    program.identifiers[0] = parser.Identifier{
-        token = tok.Token{
+    ident1, err_1 := arena_utils.push_struct(&arena, parser.Identifier{
+        token = parser.alloc_token(&arena, tok.Token{
             literal = "myVar",
             type = .Identifier
-        }
-    }
+        })
+    })
 
-    program.identifiers[1] = parser.Identifier{
-        token = tok.Token{
+    testing.expectf(t, err_1 == .None,
+        "Allocation of the First identifier failed! %v", err_1)
+
+    ident2, err_2 := arena_utils.push_struct(&arena , parser.Identifier{
+        token = parser.alloc_token(&arena,tok.Token{
             literal = "anotherVar",
             type = .Identifier
-        },
-    }
+        })
+    })
+
+    testing.expectf(t, err_2 == .None,
+        "Allocation of the second identifier failed! %v", err_2)
 
     let_stmt, err := arena_utils.push_struct(&arena, parser.LetStatement{
         token = nil,
-        ident = &program.identifiers[0],
-        value = &program.identifiers[1], 
+        ident = ident1,
+        value = ident2, 
     })
 
     let_stmt.token = parser.alloc_token(
@@ -699,7 +705,7 @@ test_if_expressions :: proc(t: ^testing.T) {
         "Consequence statement is not of type 'ExpressionStatement'!, got %v",
         typeid_of(type_of(if_expr.consequence.statements[0])))
 
-    testing.expect(t, test_identifier(t, consequence.expr, "x"))
+    testing.expect(t, test_literal_expression(t, consequence.expr, "x"))
 
     testing.expectf(t, if_expr.alternative == nil,
         "Alternative was not nil!, got '%v'", if_expr.alternative)
@@ -744,7 +750,7 @@ test_if_else_expressions :: proc(t: ^testing.T) {
         "Consequence statement is not of type 'ExpressionStatement'!, got %v",
         typeid_of(type_of(if_expr.consequence.statements[0])))
 
-    testing.expect(t, test_identifier(t, consequence.expr, "x"))
+    testing.expect(t, test_literal_expression(t, consequence.expr, "x"))
     testing.expect(t, if_expr.alternative != nil, "Alternative was nil!")
 
     // Testing 'else'
@@ -758,5 +764,96 @@ test_if_else_expressions :: proc(t: ^testing.T) {
         "Alternative statement is not of type 'ExpressionStatement'!, got %v",
         typeid_of(type_of(if_expr.alternative.statements[0])))
 
-    testing.expect(t, test_identifier(t, alt.expr, "y"))
+    testing.expect(t, test_literal_expression(t, alt.expr, "y"))
+}
+
+@(test)
+test_function_literal :: proc(t: ^testing.T) {
+    input := "fn(x, y) { x + y; }"
+
+    par := parser.new_parser(input)
+    defer parser.destroy_parser(par)
+
+    program := parser.parse_program(par)
+    defer parser.free_program(program)
+
+    testing.expectf(t, len(program.statements) == 1,
+        "program.statements does not contain 1 statement, got %d",
+        len(program.statements))
+
+    
+    expr_stmt, expr_stmt_ok := program.statements[0].(^parser.ExpressionStatement)
+
+    testing.expectf(t, expr_stmt_ok,
+        "program.statements[0] is not of type 'ExpressionStatement'!, got %v",
+        typeid_of(type_of(program.statements[0])))
+
+    fn_expr, fn_ok := expr_stmt.expr.(^parser.FunctionLiteral)
+
+    testing.expectf(t, fn_ok,
+        "expression is not of type 'FunctionLiteral'!, got %v",
+        typeid_of(type_of(expr_stmt.expr)))
+
+    testing.expectf(t, len(fn_expr.params) == 2,
+        "Expected 2 paramaters, got %d", len(fn_expr.params))
+
+    test_identifier(t, &fn_expr.params[0], "x")
+    test_identifier(t, &fn_expr.params[1], "y")
+
+    testing.expectf(t, len(fn_expr.body.statements) == 1,
+        "Expected 1 statement in the function body, got %d",
+        len(fn_expr.body.statements))
+
+    body_stmt, body_ok :=
+        fn_expr.body.statements[0].(^parser.ExpressionStatement)
+
+    testing.expectf(t, body_ok,
+        "Body statement is not of type 'ExpressionStatement'! got %v",
+        typeid_of(type_of(fn_expr.body.statements[0])))
+
+    test_infix_expression(t, body_stmt.expr, "x", "+", "y")
+}
+
+@(test)
+test_function_parameter_parsing :: proc(t: ^testing.T) {
+    ParamTest :: struct {
+        input: string,
+        expected_params: []string,
+    }
+
+    tests := [?]ParamTest{
+        { "fn() {}", {} },
+        { "fn(x) {}", {"x"} },
+        { "fn(x, y, z) {}", {"x", "y", "z"} },
+    }
+
+    for &test in tests {
+        par := parser.new_parser(test.input)
+        defer parser.destroy_parser(par)
+
+        program := parser.parse_program(par)
+        defer parser.free_program(program)
+
+        testing.expectf(t, len(program.statements) == 1,
+            "program.statements does not contain 1 statement, got %d",
+            len(program.statements))
+
+        stmt, stmt_ok := program.statements[0].(^parser.ExpressionStatement)
+
+        testing.expectf(t, stmt_ok,
+            "Statement is not of type 'ExpressionStatement'! got %v",
+            typeid_of(type_of(program.statements[0])))
+
+        fn_literal, fn_ok := stmt.expr.(^parser.FunctionLiteral)
+
+        testing.expectf(t, fn_ok,
+            "ExpressionStatement doesn't have an expression of type 'FunctionLiteral' got %v",
+            typeid_of(type_of(stmt.expr)))
+
+        for test_ident, i in test.expected_params {
+            test_identifier(t, &fn_literal.params[i], test_ident)
+        }
+
+    }
+
 }

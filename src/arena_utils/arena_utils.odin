@@ -17,6 +17,8 @@ push_struct_type :: proc(
     $T: typeid
 ) -> (^T, mem.Allocator_Error)  {
 
+    are: mem.Arena
+
     data, err := virtual.arena_alloc(arena, size_of(T), mem.DEFAULT_ALIGNMENT)
 
     switch err {
@@ -74,12 +76,15 @@ because that can't be dereferenced too.
 
 en.cppreference.com/w/c/memory/malloc
 */
-push_array :: proc(arena: ^virtual.Arena, obj: $T,
-    length: u32) -> ([]T, mem.Allocator_Error) {
+push_array :: proc(arena: ^virtual.Arena, $T: typeid,
+    length: int) -> ([]T, mem.Allocator_Error) {
 
-    if length == 0 do return nil
+    if length < 0 {
+        fmt.eprintfln("Warning! Pushed an array with 0 length!")
+        return nil, .Invalid_Argument
+    }
 
-    data, err := virtual.arena_alloc(arena, size_of(E) * length,
+    data, err := virtual.arena_alloc(arena, size_of(T) * uint(length),
         mem.DEFAULT_ALIGNMENT)
 
     switch err {
@@ -116,9 +121,9 @@ push_dynamic_array :: proc(
     dynamic_arr: [dynamic]$E
 ) -> ([]E, mem.Allocator_Error) {
 
-    if len(dynamic_arr) == 0 {
+    if len(dynamic_arr) < 0 {
         fmt.eprintfln("Warning! Pushed an array with 0 length!")
-        return nil, .Invalid_Pointer
+        return nil, .Invalid_Argument
     }
 
     num_bytes: uint = size_of(E) * len(dynamic_arr)
