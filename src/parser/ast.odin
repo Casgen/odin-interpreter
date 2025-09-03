@@ -22,6 +22,20 @@ Boolean :: struct {
 }
 
 /*
+Struct for holding a call expression
+for ex.:
+- "add(2, 3);"
+- "fn(x, y) {return x + y;}(2, 3);"
+- "add(2 * 2, 3 * 3);"
+*/
+CallExpression :: struct {
+    token: ^tok.Token,
+    expr: Expression,
+    arguments: []Expression
+}
+
+
+/*
 Struct for holding a series of statements which are enclosed in a scope
 (meaning by braces) for ex.:
 
@@ -63,6 +77,7 @@ Expression :: union {
     ^Boolean,
     ^IfExpression,
     ^FunctionLiteral,
+    ^CallExpression,
 }
 
 ExpressionStatement :: struct {

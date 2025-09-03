@@ -46,6 +46,7 @@ TokenToPrecedence := map[token.TokenType]Precedence{
     .Minus      = .Sum,
     .Slash      = .Product,
     .Asterisk   = .Product,
+    .Left_Paren = .Call,
 }
 
 alloc_token :: proc(arena: ^virtual.Arena, tok: token.Token) -> ^token.Token {
@@ -121,8 +122,15 @@ expect_peek_token :: proc(using parser: ^Parser, expect_type: token.TokenType) -
         return true
     }
 
+    token_literal: string
+    if parser.peek_token.type != .EOF {
+        token_literal = token.token_strings[parser.peek_token.type]
+    } else {
+        token_literal = "EOF"
+    }
+
     err := fmt.tprintf("Expected peek token: '%v', got '%s' instead", 
-        token.token_strings[expect_type], parser.peek_token.literal)
+        token.token_strings[expect_type], token_literal)
     append(&parser.errors, err)
 
 
@@ -230,6 +238,7 @@ get_infix_proc_by_token_type :: proc(tok_type: token.TokenType) ->
     case token.TokenType.Not_Equal: fallthrough
     case token.TokenType.Lt: fallthrough
     case token.TokenType.Gt: return parse_infix_expression
+    case token.TokenType.Left_Paren: return parse_call_expression
     }
 
     return nil
@@ -307,6 +316,71 @@ parse_infix_expression :: proc(parser: ^Parser, left_expr: Expression) ->
     return expr, ok
 }
 
+parse_call_expression :: proc(parser: ^Parser, left_expr: Expression) ->
+    (Expression, bool) {
+
+    call_expr, err := arena_utils.push_struct_type(
+        &parser.arena,
+        CallExpression
+    )
+
+    if err != .None do return nil, false
+
+   call_expr.expr = left_expr
+    ok: bool
+    call_expr.arguments, ok = parse_call_arguments(parser)
+    
+    return call_expr, ok
+}
+
+// TODO: The underlying allocation of identifiers is kinda sub-optimal
+// and should be handled differently.
+parse_call_arguments :: proc(parser: ^Parser) -> ([]Expression, bool) {
+    if parser.peek_token.type == .Right_Paren {
+        next_token(parser)
+        return nil, false
+    }
+
+    next_token(parser)
+
+    arguments: [dynamic]Expression
+    defer delete(arguments)
+
+
+    expr, expr_ok := parse_expression(parser, .Lowest)
+    if !expr_ok do return nil, false
+
+    append(&arguments, expr)
+
+    for parser.peek_token.type == .Comma {
+        next_token(parser)
+        next_token(parser)
+
+        expr, expr_ok = parse_expression(parser, .Lowest)
+        if !expr_ok do return nil, false
+
+        append(&arguments, expr)
+    }
+
+    if !expect_peek_token(parser, .Right_Paren) {
+        return nil, false
+    }
+
+    /*
+    WARN: The push_dynamic_array here makes a shallow copy. For now
+    The token pointer is valid, because it is pre-allocated in the arena
+    Watch out When modifying this to ensure that the identifiers are
+    separate from the AST to ensure different lifetimes throughout the
+    program
+    */
+    args_slice, err := arena_utils.push_dynamic_array(
+        &parser.arena,
+        arguments,
+    )
+
+    return args_slice, err == .None
+}
+
 parse_if_expression :: proc(parser: ^Parser) -> (Expression, bool) {
 
     if_expr, err := arena_utils.push_struct_type(&parser.arena, IfExpression)
@@ -358,6 +432,8 @@ parse_function_literal :: proc(parser: ^Parser) -> (Expression, bool) {
     )
     if err != .None do return nil, false
 
+    fn_literal.token = alloc_token(&parser.arena, parser.curr_token)
+
     if !expect_peek_token(parser, .Left_Paren) {
         return nil, false
     }
@@ -401,6 +477,11 @@ parse_function_parameters :: proc(parser: ^Parser) -> ([]Identifier, bool) {
         })
     }
 
+
+    if !expect_peek_token(parser, .Right_Paren) {
+        return nil, false
+    }
+
     /*
     WARN: The push_dynamic_array here makes a shallow copy. For now
     The token pointer is valid, because it is pre-allocated in the arena
@@ -413,15 +494,7 @@ parse_function_parameters :: proc(parser: ^Parser) -> ([]Identifier, bool) {
         identifiers,
     )
 
-    if err != .None {
-        return nil, false
-    }
-
-    if !expect_peek_token(parser, .Right_Paren) {
-        return ident_slice, false
-    }
-
-    return ident_slice, true
+    return ident_slice, err == .None
 }
 
 parse_block_statement :: proc(parser: ^Parser) -> (^BlockStatement, bool) {
@@ -479,21 +552,33 @@ curr_precedence :: proc(parser: ^Parser) -> Precedence {
 
 parse_return_statement :: proc(parser: ^Parser) -> (Statement, bool) {
 
-    result, err := arena_utils.push_struct(&parser.arena, ReturnStatement)
+    return_expr, err := arena_utils.push_struct(&parser.arena, ReturnStatement)
 
     if err != .None do return nil, false
 
-    result.token = alloc_token(&parser.arena, parser.curr_token)
+    return_expr.token = alloc_token(&parser.arena, parser.curr_token)
+
+    next_token(parser)
+
+    expr_ok: bool
+    return_expr.value, expr_ok = parse_expression(parser, .Lowest)
+
+    if !expr_ok do return return_expr, false
 
     for parser.curr_token.type != .Semicolon {
         next_token(parser)
     }
 
-    return result, true
+    return return_expr, true
 }
 
 
 parse_let_statement :: proc(parser: ^Parser) -> (result: Statement, ok: bool) {
+
+    let_stmt, err := arena_utils.push_struct_type(&parser.arena, LetStatement)
+    if err != .None do return let_stmt, false
+
+    let_stmt.token = alloc_token(&parser.arena, parser.curr_token)
 
     if !expect_peek_token(parser, .Identifier) {
         return result, false
@@ -505,16 +590,18 @@ parse_let_statement :: proc(parser: ^Parser) -> (result: Statement, ok: bool) {
         return nil, false
     }
 
-    let_stmt, err := arena_utils.push_struct(&parser.arena, LetStatement{
-        ident = ident.(^Identifier),
-        token = alloc_token(&parser.arena, parser.curr_token)
-    })
-
-    if err != .None do return nil, false
+    let_stmt.ident = ident.(^Identifier)
 
     if !expect_peek_token(parser, .Assign) {
         return result, false
     }
+
+    next_token(parser)
+
+    value_ok: bool
+    let_stmt.value, value_ok = parse_expression(parser, .Lowest)
+
+    if !value_ok do return nil, false
 
     for parser.curr_token.type != .Semicolon {
         next_token(parser)

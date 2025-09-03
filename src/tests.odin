@@ -10,8 +10,6 @@ import "core:log"
 import "core:strconv"
 import "core:mem/virtual"
 import "arena_utils"
-
-// TODO: use reflect to write out the variant name of a union.
 import "core:reflect"
 
 test_literal_expression :: proc{
@@ -36,6 +34,14 @@ test_literal_expression_i32 :: proc(
     return test_integer_literal(t, expr, i64(expected))
 }
 
+test_literal_expression_bool :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    expected: bool
+) -> bool {
+    return test_boolean_expression(t, expr, expected)
+}
+
 test_literal_expression_identifier :: proc(
     t: ^testing.T,
     expr: parser.Expression,
@@ -45,7 +51,7 @@ test_literal_expression_identifier :: proc(
 
     testing.expectf(t, ok,
         "Unexpected expression type! Expected parser.Identifier, got %v",
-        typeid_of(type_of(expr))) or_return
+        reflect.union_variant_typeid(expr)) or_return
 
     return test_identifier(t, ident, expected)
 }
@@ -56,7 +62,6 @@ test_identifier :: proc(
     value: string
 ) -> bool {
 
-
     testing.expectf(t, identifier.token.literal == value,
         "Unexpected identifier name! Expected %s, got %s", value,
         identifier.token.literal) or_return
@@ -64,33 +69,58 @@ test_identifier :: proc(
     return true
 }
 
+LiteralValue :: union {
+    i32, i64, string, bool
+}
 
 
 test_infix_expression :: proc(
     t: ^testing.T,
     expr: parser.Expression,
-    left: $T,
+    left: LiteralValue,
     operator: string,
-    right: $E,
+    right: LiteralValue,
 ) -> bool {
 
     infix_expr, ok := expr.(^parser.InfixExpression)
 
     testing.expectf(t, ok,
         "Unexpected Expression. Expected InfixExpression, got %v",
-        typeid_of(type_of(infix_expr))) or_return
+        reflect.union_variant_typeid(expr)) or_return
 
-    test_literal_expression(t, infix_expr.left, left) or_return
+    switch left_variant in left {
+        case i64:
+            test_literal_expression_i64(t, infix_expr.left, left_variant) or_return
+        case i32:
+            test_literal_expression_i32(t, infix_expr.left, left_variant) or_return
+        case string:
+            test_literal_expression_identifier(t, infix_expr.left, left_variant) or_return
+        case bool:
+            test_literal_expression_bool(t, infix_expr.left, left_variant) or_return
+
+
+    }
 
     testing.expectf(t, infix_expr.operator == operator,
         "Unexpected Infix operator. Expected %s, got %s", operator,
         infix_expr.operator) or_return
 
-    test_literal_expression(t, infix_expr.right, right) or_return
+    switch right_variant in right {
+        case i64:
+            test_literal_expression_i64(t, infix_expr.right, right_variant) or_return
+        case i32:
+            test_literal_expression_i32(t, infix_expr.right, right_variant) or_return
+        case string:
+            test_literal_expression_identifier(t, infix_expr.right, right_variant) or_return
+        case bool:
+            test_literal_expression_bool(t, infix_expr.right, right_variant) or_return
+
+    }
 
     return true
 }
 
+@(test)
 test_booleans :: proc(t: ^testing.T) {
     BooleanTests :: struct {
         input: string,
@@ -112,8 +142,16 @@ test_booleans :: proc(t: ^testing.T) {
         program := parser.parse_program(par)
         defer parser.free_program(program)
 
+        program_str := parser.get_program_string(program)
+        defer delete(program_str)
 
-
+        testing.expectf(t,
+            program_str == test.expected,
+            `Boolean test does not match!:
+                Expected: '%s'
+                Got: '%s'`,
+            test.expected,
+            program_str)
     }
 }
 
@@ -127,7 +165,7 @@ test_boolean_expression :: proc(
 
     testing.expectf(t, ok,
         "Expression is not of type 'Boolean'! got %v",
-        typeid_of(type_of(expr))) or_return
+        reflect.union_variant_typeid(expr)) or_return
 
     testing.expectf(t, bool_expr.value == expected,
         "Unexpected boolean value: Expected %v, got %v",
@@ -265,6 +303,12 @@ test_statements :: proc(t: ^testing.T) {
 
 @(test)
 test_let_statements :: proc(t: ^testing.T) {
+
+    LetStatementTest :: struct {
+        input: string,
+        expected_ident: string,
+        expected_value: LiteralValue
+    }
     input := `
     let x = 5;
     let y = 10;
@@ -377,13 +421,13 @@ test_identifier_expressions :: proc(t: ^testing.T) {
 
     testing.expectf(t, stmt_ok,
         "Statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(stmt)))
+        reflect.union_variant_typeid(program.statements[0]))
 
     ident, ident_ok := stmt.expr.(^parser.Identifier)
 
     testing.expectf(t, ident_ok,
         "Expression is not of type '^parser.Identifier'!, got %v",
-        typeid_of(type_of(ident)))
+        reflect.union_variant_typeid(stmt.expr))
 
     test_identifier(t, ident, "foobar")
 }
@@ -408,7 +452,7 @@ test_integer_literal_expression :: proc(t: ^testing.T) {
     stmt, ok := program.statements[0].(^parser.ExpressionStatement)
     
     testing.expectf(t, ok, "Statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(program.statements[0])))
+        reflect.union_variant_typeid(program.statements[0]))
 
     test_integer_literal(t, stmt.expr, 5)
 }
@@ -445,12 +489,12 @@ test_parsing_prefix_expressions :: proc(t: ^testing.T) {
         stmt, ok := program.statements[0].(^parser.ExpressionStatement)
 
         testing.expectf(t, ok, "Statement is not an 'ExpressionStatement', got %v",
-            typeid_of(type_of(program.statements[0])))
+            reflect.union_variant_typeid(program.statements[0]))
 
         expr, prefix_ok := stmt.expr.(^parser.PrefixExpression)
 
         testing.expectf(t, prefix_ok, "variant is not 'PrefixExpression'!, got %v",
-            typeid_of(type_of(stmt.expr)))
+            reflect.union_variant_typeid(stmt.expr))
 
         testing.expectf(t, expr.operator == test.operator,
             "expr.operator is not '%s', got '%s'", test.operator, expr.operator)
@@ -462,20 +506,23 @@ test_parsing_prefix_expressions :: proc(t: ^testing.T) {
     }
 }
 
-test_integer_literal :: proc(t: ^testing.T, il: parser.Expression,
-    value: i64) -> bool {
+test_integer_literal :: proc(
+    t: ^testing.T,
+    expr: parser.Expression,
+    value: i64
+) -> bool {
 
-    integer, ok := il.(^parser.IntegerLiteral)
+    integer, ok := expr.(^parser.IntegerLiteral)
 
-    test_ok := testing.expectf(t, ok, "il not 'IntegerLiteral', got %v",
-        typeid_of(type_of(il)))
+    testing.expectf(t, ok, "il not 'IntegerLiteral', got %v",
+        reflect.union_variant_typeid(expr)) or_return
 
-    test_ok &= testing.expectf(t, integer.value == value, "integer.value not %d, got %d",
-        value, integer.value)
+    testing.expectf(t, integer.value == value, "integer.value not %d, got %d",
+        value, integer.value) or_return
 
-    test_ok &= testing.expectf(t, integer.token.literal == fmt.tprintf("%d", value),
+    testing.expectf(t, integer.token.literal == fmt.tprintf("%d", value),
         "integer.token.literal is not equal to '%s', got '%s'", value,
-        integer.token.literal)
+        integer.token.literal) or_return
 
     return true
 }
@@ -524,13 +571,13 @@ test_parsing_infix_expressions :: proc(t: ^testing.T) {
 
         testing.expectf(t, ok,
             "program.statements[0] is not an 'ExpressionStatement', got=%v",
-            typeid_of(type_of(program.statements[0])))
+            reflect.union_variant_typeid(program.statements[0]))
 
         expr, infix_ok := stmt.expr.(^parser.InfixExpression)
 
         testing.expectf(t, infix_ok,
             "stmt.expr is not an 'InfixExpression', got=%v",
-            typeid_of(type_of(program.statements[0])))
+            reflect.union_variant_typeid(program.statements[0]))
 
         switch val in test.left_value {
         case i64:
@@ -644,6 +691,18 @@ test_operator_precedence_parsing :: proc(t: ^testing.T) {
             "!(true == true)",
             "(!(true == true))",
         },
+        {
+            "a + add(b * c) + d",
+            "((a + add((b * c))) + d)",
+        },
+        {
+            "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+            "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+        },
+        {
+            "add(a + b + c * d / f + g)",
+            "add((((a + b) + ((c * d) / f)) + g))",
+        },
     }
 
     for &test, i in precedence_tests {
@@ -677,6 +736,8 @@ test_if_expressions :: proc(t: ^testing.T) {
     program := parser.parse_program(par)
     defer parser.free_program(program)
 
+    check_parser_errors(t, par)
+
     testing.expectf(t, len(program.statements) == 1,
         "program.statements does not contain 1 statement, got %d",
         len(program.statements))
@@ -685,13 +746,13 @@ test_if_expressions :: proc(t: ^testing.T) {
 
     testing.expectf(t, stmt_ok,
         "Statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(program.statements[0])))
+        reflect.union_variant_typeid(program.statements[0]))
 
     if_expr, if_ok := stmt.expr.(^parser.IfExpression)
 
     testing.expectf(t, if_ok,
         "Statement is not of type 'IfExpression'!, got %v",
-        typeid_of(type_of(stmt.expr)))
+        reflect.union_variant_typeid(stmt.expr))
 
     test_infix_expression(t, if_expr.condition, "x", "<", "y")
 
@@ -703,7 +764,7 @@ test_if_expressions :: proc(t: ^testing.T) {
 
     testing.expectf(t, if_ok,
         "Consequence statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(if_expr.consequence.statements[0])))
+        reflect.union_variant_typeid(if_expr.consequence.statements[0]))
 
     testing.expect(t, test_literal_expression(t, consequence.expr, "x"))
 
@@ -721,6 +782,8 @@ test_if_else_expressions :: proc(t: ^testing.T) {
     program := parser.parse_program(par)
     defer parser.free_program(program)
 
+    check_parser_errors(t, par)
+
     testing.expectf(t, len(program.statements) == 1,
         "program.statements does not contain 1 statement, got %d",
         len(program.statements))
@@ -729,13 +792,13 @@ test_if_else_expressions :: proc(t: ^testing.T) {
 
     testing.expectf(t, stmt_ok,
         "Statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(program.statements[0])))
+        reflect.union_variant_typeid(program.statements[0]))
 
     if_expr, if_ok := stmt.expr.(^parser.IfExpression)
 
     testing.expectf(t, if_ok,
         "Statement is not of type 'IfExpression'!, got %v",
-        typeid_of(type_of(stmt.expr)))
+        reflect.union_variant_typeid(stmt.expr))
 
     test_infix_expression(t, if_expr.condition, "x", "<", "y")
 
@@ -748,7 +811,7 @@ test_if_else_expressions :: proc(t: ^testing.T) {
 
     testing.expectf(t, if_ok,
         "Consequence statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(if_expr.consequence.statements[0])))
+        reflect.union_variant_typeid(if_expr.consequence.statements[0]))
 
     testing.expect(t, test_literal_expression(t, consequence.expr, "x"))
     testing.expect(t, if_expr.alternative != nil, "Alternative was nil!")
@@ -762,7 +825,7 @@ test_if_else_expressions :: proc(t: ^testing.T) {
 
     testing.expectf(t, if_ok,
         "Alternative statement is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(if_expr.alternative.statements[0])))
+        reflect.union_variant_typeid(if_expr.alternative.statements[0]))
 
     testing.expect(t, test_literal_expression(t, alt.expr, "y"))
 }
@@ -777,6 +840,8 @@ test_function_literal :: proc(t: ^testing.T) {
     program := parser.parse_program(par)
     defer parser.free_program(program)
 
+    check_parser_errors(t, par)
+
     testing.expectf(t, len(program.statements) == 1,
         "program.statements does not contain 1 statement, got %d",
         len(program.statements))
@@ -786,13 +851,13 @@ test_function_literal :: proc(t: ^testing.T) {
 
     testing.expectf(t, expr_stmt_ok,
         "program.statements[0] is not of type 'ExpressionStatement'!, got %v",
-        typeid_of(type_of(program.statements[0])))
+        reflect.union_variant_typeid(program.statements[0]))
 
     fn_expr, fn_ok := expr_stmt.expr.(^parser.FunctionLiteral)
 
     testing.expectf(t, fn_ok,
         "expression is not of type 'FunctionLiteral'!, got %v",
-        typeid_of(type_of(expr_stmt.expr)))
+        reflect.union_variant_typeid(expr_stmt.expr))
 
     testing.expectf(t, len(fn_expr.params) == 2,
         "Expected 2 paramaters, got %d", len(fn_expr.params))
@@ -809,7 +874,7 @@ test_function_literal :: proc(t: ^testing.T) {
 
     testing.expectf(t, body_ok,
         "Body statement is not of type 'ExpressionStatement'! got %v",
-        typeid_of(type_of(fn_expr.body.statements[0])))
+        reflect.union_variant_typeid(fn_expr.body.statements[0]))
 
     test_infix_expression(t, body_stmt.expr, "x", "+", "y")
 }
@@ -834,6 +899,8 @@ test_function_parameter_parsing :: proc(t: ^testing.T) {
         program := parser.parse_program(par)
         defer parser.free_program(program)
 
+        check_parser_errors(t, par)
+
         testing.expectf(t, len(program.statements) == 1,
             "program.statements does not contain 1 statement, got %d",
             len(program.statements))
@@ -842,13 +909,13 @@ test_function_parameter_parsing :: proc(t: ^testing.T) {
 
         testing.expectf(t, stmt_ok,
             "Statement is not of type 'ExpressionStatement'! got %v",
-            typeid_of(type_of(program.statements[0])))
+            reflect.union_variant_typeid(program.statements[0]))
 
         fn_literal, fn_ok := stmt.expr.(^parser.FunctionLiteral)
 
         testing.expectf(t, fn_ok,
             "ExpressionStatement doesn't have an expression of type 'FunctionLiteral' got %v",
-            typeid_of(type_of(stmt.expr)))
+            reflect.union_variant_typeid(stmt.expr))
 
         for test_ident, i in test.expected_params {
             test_identifier(t, &fn_literal.params[i], test_ident)
@@ -857,3 +924,51 @@ test_function_parameter_parsing :: proc(t: ^testing.T) {
     }
 
 }
+
+@(test)
+test_call_expression_parsing :: proc(t: ^testing.T) {
+    input := "add(1, 2 * 3, 4 + 5)"
+
+    par := parser.new_parser(input)
+    defer parser.destroy_parser(par)
+
+    program := parser.parse_program(par)
+    defer parser.free_program(program)
+
+    check_parser_errors(t, par)
+
+    testing.expectf(t, len(program.statements) == 1,
+        "program.statements does not contain 1 statement, got %d",
+        len(program.statements))
+
+    stmt, stmt_ok := program.statements[0].(^parser.ExpressionStatement)
+
+    testing.expectf(t, stmt_ok,
+        "Statement is not of type 'ExpressionStatement'! got %v",
+        reflect.union_variant_typeid(program.statements[0]))
+
+    call_expr, call_ok := stmt.expr.(^parser.CallExpression)
+
+    testing.expectf(t, call_ok,
+        "Expression statement is not of type 'CallExpression'! got %v",
+        reflect.union_variant_typeid(stmt.expr))
+
+    call_ident, call_ident_ok := call_expr.expr.(^parser.Identifier)
+
+    testing.expectf(t, call_ident_ok,
+        "CallExpression.expr is not of type 'Identifier'! got %v",
+        reflect.union_variant_typeid(call_expr.expr))
+
+    if !test_identifier(t, call_ident, "add") {
+        return
+    }
+
+    testing.expectf(t, len(call_expr.arguments) == 3,
+        "Expected number of arguments to be 3, got %d",
+        len(call_expr.arguments))
+
+    test_literal_expression(t, call_expr.arguments[0], i32(1))
+    test_infix_expression(t, call_expr.arguments[1], i32(2), "*", i32(3))
+    test_infix_expression(t, call_expr.arguments[2], i32(4), "+", i32(5))
+}
+

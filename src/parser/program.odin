@@ -90,11 +90,28 @@ write_expression_string :: proc(expr: Expression,
 
         strings.write_string(str_builder,") ")
         write_block_statement(variant.body, str_builder)
+    case ^CallExpression:
+        write_expression_string(variant.expr, str_builder)
+        strings.write_byte(str_builder, '(')
+
+        arg_count := len(variant.arguments)
+
+        if arg_count > 0 {
+            for i in 0..<(arg_count - 1) {
+                write_expression_string(variant.arguments[i], str_builder)
+                strings.write_string(str_builder, ", ")
+            }
+
+            write_expression_string(
+                variant.arguments[arg_count - 1],
+                str_builder
+            )
+        }
+        strings.write_byte(str_builder, ')')
     }
 }
 
 
-// TODO: Make sure the strings are being properly outputed.
 write_statement_string :: proc(
     statement: Statement,
     str_builder: ^strings.Builder
@@ -111,6 +128,7 @@ write_statement_string :: proc(
         strings.write_string(str_builder, obj.token.literal)
         strings.write_byte(str_builder, ' ')
         write_expression_string(obj.value, str_builder)
+        strings.write_byte(str_builder, ';')
     case ^LetStatement:
         strings.write_string(str_builder, obj.token.literal)
         strings.write_byte(str_builder, ' ')
