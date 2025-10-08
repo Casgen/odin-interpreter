@@ -1,15 +1,15 @@
 #+feature dynamic-literals
-package main
+package parser
 
 import "core:testing"
 import "core:fmt"
-import "lexer"
-import tok "token"
-import "parser"
+import "../lexer"
+import tok "../token"
+import "../parser"
 import "core:log"
 import "core:strconv"
 import "core:mem/virtual"
-import "arena_utils"
+import "../arena_utils"
 import "core:reflect"
 
 test_literal_expression :: proc{
@@ -89,16 +89,30 @@ test_infix_expression :: proc(
         reflect.union_variant_typeid(expr)) or_return
 
     switch left_variant in left {
-        case i64:
-            test_literal_expression_i64(t, infix_expr.left, left_variant) or_return
-        case i32:
-            test_literal_expression_i32(t, infix_expr.left, left_variant) or_return
-        case string:
-            test_literal_expression_identifier(t, infix_expr.left, left_variant) or_return
-        case bool:
-            test_literal_expression_bool(t, infix_expr.left, left_variant) or_return
-
-
+    case i64:
+        test_literal_expression_i64(
+            t,
+            infix_expr.left,
+            left_variant
+        ) or_return
+    case i32:
+        test_literal_expression_i32(
+            t,
+            infix_expr.left,
+            left_variant
+        ) or_return
+    case string:
+        test_literal_expression_identifier(
+            t,
+            infix_expr.left,
+            left_variant
+        ) or_return
+    case bool:
+        test_literal_expression_bool(
+            t,
+            infix_expr.left,
+            left_variant
+        ) or_return
     }
 
     testing.expectf(t, infix_expr.operator == operator,
@@ -106,15 +120,30 @@ test_infix_expression :: proc(
         infix_expr.operator) or_return
 
     switch right_variant in right {
-        case i64:
-            test_literal_expression_i64(t, infix_expr.right, right_variant) or_return
-        case i32:
-            test_literal_expression_i32(t, infix_expr.right, right_variant) or_return
-        case string:
-            test_literal_expression_identifier(t, infix_expr.right, right_variant) or_return
-        case bool:
-            test_literal_expression_bool(t, infix_expr.right, right_variant) or_return
-
+    case i64:
+        test_literal_expression_i64(
+            t,
+            infix_expr.right,
+            right_variant
+        ) or_return
+    case i32:
+        test_literal_expression_i32(
+            t,
+            infix_expr.right,
+            right_variant
+        ) or_return
+    case string:
+        test_literal_expression_identifier(
+            t,
+            infix_expr.right,
+            right_variant
+        ) or_return
+    case bool:
+        test_literal_expression_bool(
+            t,
+            infix_expr.right,
+            right_variant
+        ) or_return
     }
 
     return true
@@ -971,4 +1000,5 @@ test_call_expression_parsing :: proc(t: ^testing.T) {
     test_infix_expression(t, call_expr.arguments[1], i32(2), "*", i32(3))
     test_infix_expression(t, call_expr.arguments[2], i32(4), "+", i32(5))
 }
+
 
