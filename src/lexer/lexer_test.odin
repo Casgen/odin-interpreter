@@ -5,7 +5,7 @@ import "../token"
 import "core:fmt"
 
 
-@test
+@(test)
 test_next_token :: proc(t: ^testing.T) {
 	input := `let five = 5;
     let ten = 10;
@@ -26,7 +26,11 @@ test_next_token :: proc(t: ^testing.T) {
     }
 
     10 == 10;
-    10 != 9;`
+    10 != 9;
+    "foobar"
+    "foo bar"
+    ""
+    `
 	tests := [?]token.Token{
 		{token.TokenType.Let, "let"},
 		{token.TokenType.Identifier, "five"},
@@ -110,10 +114,15 @@ test_next_token :: proc(t: ^testing.T) {
         {token.TokenType.Integer, "9"},
 		{token.TokenType.Semicolon, ";"},
 
+		{token.TokenType.String, "foobar"},
+		{token.TokenType.String, "foo bar"},
+		{token.TokenType.String, ""},
+
 		{token.TokenType.EOF, ""},
 	}
 
 	l := new_lexer(input)
+    defer destroy_lexer(l)
 
 	for test in tests {
 		tok := next_token(l)

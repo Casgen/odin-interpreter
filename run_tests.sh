@@ -1,1 +1,1 @@
-odin test ./src/parser && odin test ./src/evaluator
+odin test ./src --all-packages

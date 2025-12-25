@@ -82,7 +82,7 @@ new_parser_lexer :: proc(lex: ^lexer.Lexer) -> ^Parser {
 	p.errors = make([dynamic]string, 0, 1)
 
     err := virtual.arena_init_growing(&p.arena)
-    assert(err == virtual.Allocator_Error.None, "Failed to allocate an arena!")
+    fmt.assertf(err == .None, "Failed to allocate an arena '%v'!", err)
 
 	return p
 }
@@ -221,6 +221,7 @@ get_prefix_proc_by_token_type :: proc(tok_type: token.TokenType) ->
     case .Left_Paren: return parse_grouped_expression
     case .If: return parse_if_expression
     case .Function: return parse_function_literal
+    case .String: return parse_string_literal
     }
 
     return nil
@@ -326,7 +327,7 @@ parse_call_expression :: proc(parser: ^Parser, left_expr: Expression) ->
 
     if err != .None do return nil, false
 
-   call_expr.expr = left_expr
+    call_expr.function = left_expr
     ok: bool
     call_expr.arguments, ok = parse_call_arguments(parser)
     
@@ -633,6 +634,30 @@ parse_integer_literal :: proc(parser: ^Parser) -> (Expression, bool) {
     if err != .None do return nil, false
 
     return int_literal, true
+}
+
+parse_string_literal :: proc(parser: ^Parser) -> (Expression, bool) {
+    if !expect_token(parser, .String) {
+        return nil, false
+    }
+
+    str_literal, str_err := arena_utils.push_string(
+        &parser.arena,
+        parser.curr_token.literal
+    )
+
+    fmt.assertf(str_err == .None, "Failed to allocate a string literal! %v", str_err)
+
+    expr, ok := arena_utils.push_struct(&parser.arena, StringLiteral{
+        token = alloc_token(&parser.arena, parser.curr_token),
+        value = str_literal
+    })
+
+    fmt.assertf(ok == .None,
+        "Failed to allocate a StringLiteral expression! %v",
+        ok)
+
+    return expr, true
 }
 
 is_boolean_literal :: proc(token_type: token.TokenType) -> bool {

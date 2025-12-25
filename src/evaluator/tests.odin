@@ -2,20 +2,35 @@ package evaluator
 
 import "core:testing"
 import "core:reflect"
+import "core:strings"
 
 import "../object"
 import "../parser"
 import "../evaluator"
 
 
-test_eval :: proc(eval_ctx: ^EvaluatorCtx, input: string) -> object.Object {
+test_eval :: proc(input: string) -> object.Object {
     par := parser.new_parser(input)
     defer parser.destroy_parser(par)
 
     program := parser.parse_program(par)
     defer parser.free_program(program)
 
-    return evaluator.eval(eval_ctx, program)
+    eval_ctx := object.create_evaluator_ctx()
+    defer object.destroy_evaluator_ctx(&eval_ctx)
+
+    result := evaluator.eval_program(&eval_ctx, program)
+    return object.copy_object(result)
+}
+
+test_eval_with_ctx :: proc(input: string, eval_ctx: ^object.EvaluatorCtx) -> object.Object {
+    par := parser.new_parser(input)
+    defer parser.destroy_parser(par)
+
+    program := parser.parse_program(par)
+    defer parser.free_program(program)
+
+    return evaluator.eval_program(eval_ctx, program)
 }
 
 test_integer_object :: proc(
@@ -93,12 +108,11 @@ test_eval_integer_expression :: proc(t: ^testing.T) {
         {"(5 + 10 * 2 + 15 / 3) * 2 + -10", 50},
     }
 
-    for &tt in tests {
-        eval_ctx := evaluator.create_evaluator_ctx()
-        defer evaluator.destroy_evaluator_ctx(&eval_ctx)
+    for &test in tests {
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
 
-        result_obj := test_eval(&eval_ctx, tt.input)
-        test_integer_object(t, result_obj, tt.expected)
+        test_integer_object(t, evaluated, test.expected)
     }
 }
 
@@ -131,12 +145,11 @@ test_eval_bool_expression :: proc(t: ^testing.T) {
         { "(1 > 2) == false", true },
     }
 
-    for &tt in tests {
-        eval_ctx := evaluator.create_evaluator_ctx()
-        defer evaluator.destroy_evaluator_ctx(&eval_ctx)
+    for &test in tests {
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
 
-        result_obj := test_eval(&eval_ctx, tt.input)
-        test_bool_object(t, result_obj, tt.expected)
+        test_bool_object(t, evaluated, test.expected)
     }
 }
 
@@ -156,12 +169,11 @@ test_bang_operator :: proc(t: ^testing.T) {
         {"!!5", true},
     }
 
-    for &tt in tests {
-        eval_ctx := evaluator.create_evaluator_ctx()
-        defer evaluator.destroy_evaluator_ctx(&eval_ctx)
+    for &test in tests {
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
 
-        result_obj := test_eval(&eval_ctx, tt.input)
-        test_bool_object(t, result_obj, tt.expected)
+        test_bool_object(t, evaluated, test.expected)
     }
 }
 
@@ -182,18 +194,16 @@ test_if_else_expression :: proc(t: ^testing.T) {
         {"if (1 < 2) { 10 } else { 20 }", 10},
     }
 
-    for &tt in tests {
-        eval_ctx := evaluator.create_evaluator_ctx()
-        defer evaluator.destroy_evaluator_ctx(&eval_ctx)
+    for &test in tests {
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
 
-        result_obj := test_eval(&eval_ctx, tt.input)
-
-        exp_value, ok := tt.expected.(i64)
+        exp_value, ok := test.expected.(i64)
 
         if ok {
-            test_integer_object(t, result_obj, tt.expected.(i64))
+            test_integer_object(t, evaluated, test.expected.(i64))
         } else {
-            test_null_object(t, result_obj)
+            test_null_object(t, evaluated)
         }
     }
 }
@@ -224,10 +234,9 @@ test_return_statements :: proc(t: ^testing.T) {
     }
 
     for &test in tests {
-        eval_ctx := evaluator.create_evaluator_ctx()
-        defer evaluator.destroy_evaluator_ctx(&eval_ctx)
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
 
-        evaluated := test_eval(&eval_ctx, test.input)
         test_integer_object(t, evaluated, test.expected)
     }
 }
@@ -265,22 +274,30 @@ test_error_handling :: proc(t: ^testing.T) {
             "unknown operator: BOOLEAN + BOOLEAN",
         },
         {
-        `
-        if (10 > 1) {
-            if (10 > 1) {
-                return true + false;
-            }
-        return 1;
-        }
-        `, "unknown operator: BOOLEAN + BOOLEAN",
+            "foobar",
+            "identifier not found: foobar",
         },
+        {
+            `
+            if (10 > 1) {
+                if (10 > 1) {
+                    return true + false;
+                }
+            return 1;
+            }
+            `,
+            "unknown operator: BOOLEAN + BOOLEAN",
+        },
+        {
+            `"Hello" - "World"`,
+            "unknown operator: STRING - STRING",
+        }
     }
 
     for &test in tests {
-        eval_ctx := create_evaluator_ctx()
-        defer destroy_evaluator_ctx(&eval_ctx)
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
 
-        evaluated := test_eval(&eval_ctx, test.input)
         err_obj, ok := evaluated.(^object.Error)
 
         if testing.expectf(t, ok, "No error object returned, got=%v",
@@ -291,5 +308,168 @@ test_error_handling :: proc(t: ^testing.T) {
         testing.expectf(t, err_obj.message == test.expected_message,
             "wrong error message. expected=%s, got=%s",
             test.expected_message, err_obj.message)
+    }
+}
+
+@(test)
+test_let_statements :: proc(t: ^testing.T) {
+    Tests :: struct {
+        input: string,
+        expected: i64,
+    }
+
+    tests := [?]Tests{
+        {"let a = 5; a;", 5},
+        {"let a = 5 * 5; a;", 25},
+        {"let a = 5; let b = a; b;", 5},
+        {"let a = 5; let b = a; let c = a + b + 5; c;", 15},
+    }
+
+    for &test in tests {
+        evaluated := test_eval(test.input)
+        defer object.free_object(evaluated)
+
+        test_integer_object(t, evaluated, test.expected)
+    }
+}
+
+@(test)
+test_function_object :: proc(t: ^testing.T) {
+    input := "fn(x) { x + 2; }"
+
+    eval_ctx := object.create_evaluator_ctx()
+    defer object.destroy_evaluator_ctx(&eval_ctx)
+
+    evaluated := test_eval_with_ctx(input, &eval_ctx)
+
+    fn, ok := evaluated.(^object.Function)
+
+    if testing.expectf(t, ok, "Object is not a function! got %v",
+        reflect.union_variant_typeid(evaluated)) {
+        return
+    }
+
+    if testing.expectf(t, len(fn.params) == 1,
+        "Wrong number of parameters! expected 1, got %d", len(fn.params)) {
+        return
+    }
+
+    if testing.expectf(t, fn.params[0].token.literal == "x",
+        "Parameter is not 'x', got '%s'", fn.params[0].token.literal) {
+        return
+    }
+
+    expected_body := "(x + 2)"
+
+    str_builder: strings.Builder
+    parser.write_block_statement(&str_builder, fn.body, false)
+    actual_body := strings.to_string(str_builder)
+    defer delete(actual_body)
+
+    if testing.expectf(t, expected_body == actual_body,
+        "Body is not '%s', got '%s'", expected_body, actual_body) {
+        return
+    }
+
+}
+
+@(test)
+test_function_application :: proc(t: ^testing.T) {
+    Tests :: struct {
+        input: string,
+        expected: i64
+    }
+
+    tests := [?]Tests{
+        {"let identity = fn(x) { x; }; identity(5);", 5},
+        {"let identity = fn(x) { return x; }; identity(5);", 5},
+        {"let double = fn(x) { x * 2; }; double(5);", 10},
+        {"let add = fn(x, y) { x + y; }; add(5, 5);", 10},
+        {"let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20},
+        {"fn(x) { x; }(5)", 5},
+        {
+            `
+            let add = fn(x, y) { x + y; };
+            let sub = fn(x, y) { x - y; };
+            let multiply = fn(x, y) { x * y; };
+            let divide = fn(x, y) {x / y;};
+
+            let count = 10;
+            let result = add(multiply(count + 10, 20), divide(20, 10));
+            sub(result, -10);
+            `,
+            412
+        },
+        {
+            `
+            let newAdder = fn(x) { fn(n) { x + n } };
+            let addTwo = newAdder(2);
+            addTwo(2);
+            `,
+            4
+        }
+    }
+    for test in tests {
+        eval_ctx := object.create_evaluator_ctx();
+        defer object.destroy_evaluator_ctx(&eval_ctx);
+
+        evaluated := test_eval_with_ctx(test.input, &eval_ctx)
+
+        test_integer_object(t, evaluated, test.expected)
+    }
+}
+
+@(test)
+// evaluator/evaluator_test.go
+test_string_concatenation :: proc(t: ^testing.T) {
+    input := `"Hello" + " " + "World!"`
+
+    eval_ctx := object.create_evaluator_ctx();
+    defer object.destroy_evaluator_ctx(&eval_ctx);
+
+    evaluated := test_eval_with_ctx(input, &eval_ctx)
+    str, ok := evaluated.(^object.String)
+
+    if !testing.expectf(t, ok, "Object is not of Type String! got %v",
+        reflect.union_variant_typeid(evaluated)) { return }
+
+    testing.expectf(t, str.value == "Hello World!",
+        "String has wrong value. got=%s", str.value)
+}
+
+@(test)
+// evaluator/evaluator_test.go
+test_string_comparison :: proc(t: ^testing.T) {
+
+    Tests :: struct {
+        input: string,
+        expected: bool,
+    }
+
+    tests := [?]Tests{
+        {
+            `"Hello, World!" == "Hello, World!"`,
+            true
+        },
+        {
+            `"foo" == "bar"`,
+            false
+        }
+    }
+
+    for test in tests {
+        eval_ctx := object.create_evaluator_ctx();
+        defer object.destroy_evaluator_ctx(&eval_ctx);
+
+        evaluated := test_eval_with_ctx(test.input, &eval_ctx)
+        result, ok := evaluated.(^object.Boolean)
+
+        if !testing.expectf(t, ok, "Result is not of type Boolean! got %v",
+            reflect.union_variant_typeid(evaluated)) { return }
+
+        testing.expectf(t, result.value == test.expected,
+            "Unexpected string comparison result!. Expected %b,got=%b",
+            test.expected ,result.value)
+
     }
 }

@@ -97,6 +97,9 @@ next_token :: proc(using lex: ^Lexer) -> token.Token {
 		tok = {token.TokenType.Right_Brace, token.token_strings[.Right_Brace]}
 	case '!':
 		tok = make_two_char_token(lex, token.TokenType.Bang)
+    case '"':
+        tok.type = token.TokenType.String
+        tok.literal = read_string(lex)
 	case 0:
 		tok = {token.TokenType.EOF, token.token_strings[.EOF]}
 	case:
@@ -145,7 +148,7 @@ is_letter :: proc(char: u8) -> bool {
 is_digit :: proc(char: u8) -> bool {
 	// 48 = '0'
 	// 57 = '9'
-	return (char >= 48) & (char <= 57)
+	return (char >= '0') && (char <= '9')
 }
 
 read_number :: proc(using lex: ^Lexer) -> string {
@@ -176,6 +179,19 @@ read_identifier :: proc(using lex: ^Lexer) -> string {
 
     // Cloning the literal to make it independent from the input
 	return input[first_position:position] 
+}
+
+read_string :: proc(using lex: ^Lexer) -> string {
+    assert(lex.char == '\"')
+
+    read_char(lex)
+    begin := lex.position
+
+    for lex.char != '"' && lex.char != 0 {
+        read_char(lex)
+    }
+
+    return input[begin:lex.position]
 }
 
 skip_whitespace :: proc(using lex: ^Lexer) {

@@ -23,50 +23,62 @@ get_program_string :: proc(program: ^Program) -> string {
 }
 
 write_block_statement :: proc(
-    block_stmt: ^BlockStatement,
     str_builder: ^strings.Builder,
+    block_stmt: ^BlockStatement,
+    include_braces: bool = true
 ) {
-    strings.write_string(str_builder, "{ ")
+    if include_braces {
+        strings.write_string(str_builder, "{ ")
+    }
 
     for &stmt in block_stmt.statements {
         write_statement_string(stmt, str_builder)
     }
 
-    strings.write_string(str_builder, "}")
+    if include_braces {
+        strings.write_string(str_builder, "}")
+    }
 }
 
-write_expression_string :: proc(expr: Expression,
-    str_builder: ^strings.Builder) {
+@(private)
+write_expression_string :: proc(
+    str_builder: ^strings.Builder,
+    expr: Expression
+) {
     
     switch variant in expr {
     case ^Identifier:
         strings.write_string(str_builder, variant.token.literal)
     case ^IntegerLiteral:
         strings.write_string(str_builder, variant.token.literal)
+    case ^StringLiteral:
+        strings.write_byte(str_builder, '"')
+        strings.write_string(str_builder, variant.token.literal)
+        strings.write_byte(str_builder, '"')
     case ^PrefixExpression:
         strings.write_byte(str_builder, '(')
         strings.write_string(str_builder, variant.operator)
-        write_expression_string(variant.right, str_builder)
+        write_expression_string(str_builder, variant.right)
         strings.write_byte(str_builder, ')')
     case ^InfixExpression:
         strings.write_byte(str_builder, '(')
-        write_expression_string(variant.left, str_builder)
+        write_expression_string(str_builder, variant.left)
         strings.write_byte(str_builder, ' ')
         strings.write_string(str_builder, variant.operator)
         strings.write_byte(str_builder, ' ')
-        write_expression_string(variant.right, str_builder)
+        write_expression_string(str_builder, variant.right)
         strings.write_byte(str_builder, ')')
     case ^Boolean:
         strings.write_string(str_builder, variant.value ? "true" : "false")
     case ^IfExpression:
         strings.write_string(str_builder, "if")
-        write_expression_string(variant.condition, str_builder)
+        write_expression_string(str_builder, variant.condition)
         strings.write_byte(str_builder, ' ')
-        write_block_statement(variant.consequence, str_builder)
+        write_block_statement(str_builder, variant.consequence)
 
         if (variant.alternative != nil) {
             strings.write_string(str_builder, "else ")
-            write_block_statement(variant.consequence, str_builder)
+            write_block_statement(str_builder, variant.consequence)
         }
     case ^FunctionLiteral:
         strings.write_string(str_builder, "fn(")
@@ -89,22 +101,22 @@ write_expression_string :: proc(expr: Expression,
         }
 
         strings.write_string(str_builder,") ")
-        write_block_statement(variant.body, str_builder)
+        write_block_statement(str_builder, variant.body)
     case ^CallExpression:
-        write_expression_string(variant.expr, str_builder)
+        write_expression_string(str_builder, variant.function)
         strings.write_byte(str_builder, '(')
 
         arg_count := len(variant.arguments)
 
         if arg_count > 0 {
             for i in 0..<(arg_count - 1) {
-                write_expression_string(variant.arguments[i], str_builder)
+                write_expression_string(str_builder, variant.arguments[i])
                 strings.write_string(str_builder, ", ")
             }
 
             write_expression_string(
-                variant.arguments[arg_count - 1],
-                str_builder
+                str_builder,
+                variant.arguments[arg_count - 1]
             )
         }
         strings.write_byte(str_builder, ')')
@@ -112,6 +124,7 @@ write_expression_string :: proc(expr: Expression,
 }
 
 
+@(private)
 write_statement_string :: proc(
     statement: Statement,
     str_builder: ^strings.Builder
@@ -127,18 +140,20 @@ write_statement_string :: proc(
     case ^ReturnStatement:
         strings.write_string(str_builder, obj.token.literal)
         strings.write_byte(str_builder, ' ')
-        write_expression_string(obj.value, str_builder)
+        write_expression_string(str_builder, obj.value)
         strings.write_byte(str_builder, ';')
     case ^LetStatement:
         strings.write_string(str_builder, obj.token.literal)
         strings.write_byte(str_builder, ' ')
         strings.write_string(str_builder, obj.ident.token.literal)
         strings.write_string(str_builder, " = ")
-        write_expression_string(obj.value, str_builder)
+        write_expression_string(str_builder, obj.value)
         strings.write_byte(str_builder, ';')
     case ^ExpressionStatement:
-        write_expression_string(obj.expr, str_builder)
+        write_expression_string(str_builder, obj.expr)
     case:
         fmt.eprintln("Failed to get statement string. Unhandled Statement type!")
     }
 }
+
+

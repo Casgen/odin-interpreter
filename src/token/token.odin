@@ -13,6 +13,7 @@ TokenType :: enum {
 	// Identifier + Literals
 	Identifier,
 	Integer,
+    String,
 
 	// Operators
 	Assign,
@@ -67,6 +68,7 @@ Token_Strings :: [TokenType]string {
 	.EOF         = "",
 	.Identifier  = "IDENT",
 	.Integer     = "INTEGER",
+    .String      = "STRING",
 	.Assign      = "=",
 	.Plus        = "+",
 	.Minus       = "-",

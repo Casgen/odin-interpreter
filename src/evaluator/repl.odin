@@ -92,10 +92,11 @@ stdin_and_out_procedure ::proc(
 start :: proc(reader: io.Reader, writer: io.Writer) {
 
     bufio_reader: bufio.Reader
-
     bufio.reader_init(&bufio_reader, reader)
-
     fmt.println("Welcome to the Monkey programming language!")
+
+    eval_ctx := object.create_evaluator_ctx()
+    defer object.destroy_evaluator_ctx(&eval_ctx)
 
     for {
         fmt.print(PROMPT)
@@ -132,15 +133,12 @@ start :: proc(reader: io.Reader, writer: io.Writer) {
             continue
         }
 
-        eval_ctx := evaluator.create_evaluator_ctx()
-        defer evaluator.destroy_evaluator_ctx(&eval_ctx)
-
         evaluated := eval_program(&eval_ctx, program)
         if evaluated != nil {
-            _, _ = io.write_string(
-                writer,
-                object.inspect_string(evaluated)
-            )
+            repl_str := object.inspect_string(evaluated)
+            defer delete(repl_str)
+
+            _, _ = io.write_string(writer, repl_str)
             _ = io.write_byte(writer, '\n')
         }
 

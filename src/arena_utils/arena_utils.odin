@@ -66,22 +66,21 @@ push_struct_literal :: proc(
     return nil, err
 }
 
-/*
-Allocates a static array on the Arena. The array is not resizable!
 
-NOTE: Should nil be returned or not? In C it is implementation defined.
-Either it will return nullptr or not, but it shouldn't be dereferenced.
-If it can't be dereferenced, than nullptr would be more predictable,
-because that can't be dereferenced too.
+// Allocates a static array on the Arena. The array is not resizable!
+// 
+// NOTE: Should nil be returned or not when length is zero? In C it is
+// implementation defined. Either it will return nullptr or not,
+// but it shouldn't be dereferenced. If it can't be dereferenced,
+// than nullptr would be more predictable, because that can't be dereferenced too.
+// 
+// en.cppreference.com/w/c/memory/malloc
 
-en.cppreference.com/w/c/memory/malloc
-*/
-push_array :: proc(arena: ^virtual.Arena, $T: typeid,
+push_array_new :: proc(arena: ^virtual.Arena, $T: typeid,
     length: int) -> ([]T, mem.Allocator_Error) {
 
     if length < 0 {
-        fmt.eprintfln("Warning! Pushed an array with 0 length!")
-        return nil, .Invalid_Argument
+        return nil, .None
     }
 
     data, err := virtual.arena_alloc(arena, size_of(T) * uint(length),
@@ -90,6 +89,53 @@ push_array :: proc(arena: ^virtual.Arena, $T: typeid,
     switch err {
     case .None:
         return slice.reinterpret([]T, data), err
+    case .Invalid_Pointer:
+        fmt.eprintfln("Failed to push array! Invalid_Pointer!")
+    case .Out_Of_Memory:
+        fmt.eprintfln("Failed to push array! Out Of Memory!")
+    case .Mode_Not_Implemented:
+        fmt.eprintfln("Failed to push array! Mode not implemented!")
+    case .Invalid_Argument:
+        fmt.eprintfln("Failed to push array! Invalid Argument!")
+    }
+
+    return nil, err
+}
+
+push_array :: proc {
+    push_array_literal,
+    push_array_new,
+}
+
+
+// Allocates a struct on the arena and sets the structs values.
+// WARN: Note that this makes a shallow copy from the literal!
+// Should be used ideally for structs only with literal values in them.
+// (should not contain any pointers, unless you want to have them explicitly
+// share a pointer)
+push_array_literal :: proc(
+    arena: ^virtual.Arena,
+    array: []$E
+) -> ([]E, mem.Allocator_Error) {
+
+    if len(array) < 0 {
+        return nil, .None
+    }
+
+    num_bytes: uint = size_of(E) * len(array)
+    data, err := virtual.arena_alloc(arena, num_bytes, mem.DEFAULT_ALIGNMENT)
+
+    switch err {
+    case .None:
+        // Make a copy
+        mem.copy(
+            mem.raw_data(data),
+            mem.raw_data(array),
+            size_of(E) * len(array)
+        )
+
+        // Cast to the slice with appropriate type
+        return slice.reinterpret([]E, data), err
     case .Invalid_Pointer:
         fmt.eprintfln("Failed to push array! Invalid_Pointer!")
     case .Out_Of_Memory:
